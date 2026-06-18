@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import base64
 import altair as alt
 import pandas as pd
 import requests
@@ -7,6 +8,7 @@ import streamlit as st
 
 
 BASE_DIR = Path(__file__).resolve().parent
+LOGO_FILE = BASE_DIR / "assets" / "aciona_logo.svg"
 
 PROJECTED_FILES = [
     BASE_DIR / "ipp_phase_1_projected_development_curve_hard_cost.csv",
@@ -24,6 +26,7 @@ BASEROW_API_BASE = "https://api.baserow.io/api"
 BASEROW_API_TOKEN_DEFAULT = ""
 BASEROW_PROJECTED_TABLE_ID_DEFAULT = "1019681"
 BASEROW_TRACKING_TABLE_ID_DEFAULT = "1019637"
+BASEROW_CONTINGENCY_TABLE_ID_DEFAULT = "1035197"
 
 BRAND_EBONY = "#3D3533"
 BRAND_GOLD = "#CC9955"
@@ -34,6 +37,14 @@ BRAND_TERRA_SOFT = "#B79A78"
 BRAND_PROJECTED_GRAY = "#9CA3AF"
 BRAND_GRID = "#E5DCCB"
 BRAND_BG = "#FBF8F1"
+CONTINGENCY_MULTI_PALETTE = [
+    "#5B8FD9",
+    "#58B982",
+    "#9B7AE5",
+    "#D89A45",
+    "#D96B6B",
+    "#4EB8AD",
+]
 PROJECT_COLOR_PAIRS = [
     ("#1D4ED8", "#93C5FD"),
     ("#047857", "#86EFAC"),
@@ -283,10 +294,69 @@ def baserow_rows_to_actual(rows: list[dict]) -> pd.DataFrame:
     return out
 
 
-def load_baserow_data(token: str, projected_table_id: str, tracking_table_id: str, api_base: str):
+def baserow_rows_to_contingency(rows: list[dict]) -> pd.DataFrame:
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    required = [
+        "Name",
+        "Project",
+        "Project Text",
+        "Report Date",
+        "Report Month",
+        "Draw Number",
+        "Original Contingency",
+        "Current Contingency",
+        "Monthly Contingency Change",
+        "Total Reallocated",
+        "Contingency Drawn To Date",
+        "Remaining Contingency",
+    ]
+    for col in required:
+        if col not in df:
+            df[col] = pd.NA
+
+    project = df["Project"].map(link_value).astype(str)
+    project_text = df["Project Text"].fillna("").astype(str)
+    project = project.where(project.str.strip() != "", project_text)
+    project = project.where(project.str.strip() != "", df["Name"].fillna("").astype(str).str.split(" - ").str[0])
+
+    out = pd.DataFrame(
+        {
+            "Name": df["Name"].fillna("").astype(str),
+            "Project": project,
+            "Report Date": parse_date(df["Report Date"]),
+            "Report Month Label": df["Report Month"].fillna("").astype(str),
+            "Draw Number": to_number(df["Draw Number"]),
+            "Original Contingency": to_number(df["Original Contingency"]),
+            "Current Contingency": to_number(df["Current Contingency"]),
+            "Monthly Contingency Change": to_number(df["Monthly Contingency Change"]),
+            "Total Reallocated": to_number(df["Total Reallocated"]),
+            "Contingency Drawn To Date": to_number(df["Contingency Drawn To Date"]),
+            "Remaining Contingency": to_number(df["Remaining Contingency"]),
+            "Source": "Baserow",
+        }
+    )
+    out = out.dropna(subset=["Report Date"]).sort_values(["Project", "Report Date"])
+    out["Period"] = out["Report Date"].dt.to_period("M").astype(str)
+    return out
+
+
+def load_baserow_data(
+    token: str,
+    projected_table_id: str,
+    tracking_table_id: str,
+    contingency_table_id: str,
+    api_base: str,
+):
     projected_rows = fetch_baserow_rows(token, projected_table_id, api_base)
     actual_rows = fetch_baserow_rows(token, tracking_table_id, api_base)
-    return baserow_rows_to_projected(projected_rows), baserow_rows_to_actual(actual_rows)
+    contingency_rows = fetch_baserow_rows(token, contingency_table_id, api_base)
+    return (
+        baserow_rows_to_projected(projected_rows),
+        baserow_rows_to_actual(actual_rows),
+        baserow_rows_to_contingency(contingency_rows),
+    )
 
 
 def normalize_projected_completion_month(projected: pd.DataFrame) -> pd.DataFrame:
@@ -378,6 +448,26 @@ def signed_money_mm(value: float | int | None) -> str:
     return f"{sign}US$ {formatted}MM"
 
 
+def signed_money(value: float | int | None) -> str:
+    if pd.isna(value):
+        return "-"
+    sign = "+" if value >= 0 else "-"
+    return f"{sign}US$ {abs(value):,.0f}"
+
+
+def compact_signed_money(value: float | int | None) -> str:
+    if pd.isna(value):
+        return ""
+    sign = "+" if value >= 0 else "-"
+    absolute = abs(float(value))
+    if absolute >= 1_000_000:
+        formatted = f"{absolute / 1_000_000:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"{sign}US$ {formatted}MM"
+    if absolute >= 1_000:
+        return f"{sign}US$ {absolute / 1_000:,.0f}K"
+    return f"{sign}US$ {absolute:,.0f}"
+
+
 def pct(value: float | int | None) -> str:
     if pd.isna(value):
         return "-"
@@ -406,6 +496,14 @@ def date_label(value) -> str:
     if pd.isna(value):
         return "-"
     return pd.to_datetime(value).strftime("%b/%y")
+
+
+def asset_data_uri(path: Path) -> str:
+    if not path.exists():
+        return ""
+    mime = "image/svg+xml" if path.suffix.lower() == ".svg" else "image/png"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
 
 
 def metric_pair_html(title: str, left_label: str, left_value: str, right_label: str, right_value: str) -> str:
@@ -460,6 +558,17 @@ def mm_axis(title: str = "US$") -> alt.Axis:
     return alt.Axis(title=title, labelExpr="datum.value == 0 ? '0' : format(datum.value / 1000000, '.0f') + 'MM'")
 
 
+def compact_usd_axis(title: str = "US$") -> alt.Axis:
+    return alt.Axis(
+        title=title,
+        labelExpr=(
+            "datum.value == 0 ? '0' : "
+            "abs(datum.value) >= 1000000 ? format(datum.value / 1000000, '.1f') + 'MM' : "
+            "format(datum.value / 1000, '.0f') + 'K'"
+        ),
+    )
+
+
 def project_color_map(projects: list[str]) -> tuple[list[str], list[str]]:
     domain: list[str] = []
     colors: list[str] = []
@@ -468,6 +577,11 @@ def project_color_map(projects: list[str]) -> tuple[list[str], list[str]]:
         domain.extend([f"{project} - Actual", f"{project} - Projected"])
         colors.extend([actual_color, projected_color])
     return domain, colors
+
+
+def contingency_color_scale(projects: list[str]) -> alt.Scale:
+    palette = [BRAND_EBONY] if len(projects) <= 1 else CONTINGENCY_MULTI_PALETTE
+    return alt.Scale(domain=projects, range=[palette[index % len(palette)] for index in range(len(projects))])
 
 
 def line_chart(df: pd.DataFrame, y_field: str, title: str, y_title: str) -> alt.Chart:
@@ -849,9 +963,213 @@ def comparable_projected_row(
     return None
 
 
+def latest_contingency_by_project(contingency: pd.DataFrame) -> pd.DataFrame:
+    if contingency.empty:
+        return contingency
+    return (
+        contingency.sort_values(["Project", "Report Date"])
+        .groupby("Project", as_index=False)
+        .tail(1)
+        .sort_values("Project")
+    )
+
+
+def contingency_metrics(contingency: pd.DataFrame, selected_project: str) -> dict:
+    if contingency.empty:
+        return {
+            "latest_date": pd.NaT,
+            "original": None,
+            "remaining": None,
+            "reallocated": None,
+            "drawn": None,
+            "remaining_pct": None,
+        }
+
+    if selected_project == "All projects":
+        latest = latest_contingency_by_project(contingency)
+        latest_date = latest["Report Date"].max()
+        original = latest["Original Contingency"].sum(min_count=1)
+        remaining = latest["Remaining Contingency"].sum(min_count=1)
+        reallocated = latest["Total Reallocated"].sum(min_count=1)
+        drawn = latest["Contingency Drawn To Date"].sum(min_count=1)
+    else:
+        latest = contingency.sort_values("Report Date").tail(1)
+        latest_date = latest["Report Date"].iloc[0] if not latest.empty else pd.NaT
+        original = latest["Original Contingency"].iloc[0] if not latest.empty else None
+        remaining = latest["Remaining Contingency"].iloc[0] if not latest.empty else None
+        reallocated = latest["Total Reallocated"].iloc[0] if not latest.empty else None
+        drawn = latest["Contingency Drawn To Date"].iloc[0] if not latest.empty else None
+
+    remaining_pct = None
+    if original is not None and pd.notna(original) and original != 0 and remaining is not None and pd.notna(remaining):
+        remaining_pct = remaining / original * 100
+
+    return {
+        "latest_date": latest_date,
+        "original": original,
+        "remaining": remaining,
+        "reallocated": reallocated,
+        "drawn": drawn,
+        "remaining_pct": remaining_pct,
+    }
+
+
+def contingency_line_chart(contingency: pd.DataFrame, title: str) -> alt.Chart:
+    df = contingency.copy()
+    if df.empty:
+        return alt.Chart(pd.DataFrame())
+
+    df["Remaining Label"] = df["Remaining Contingency"].map(
+        lambda value: "" if pd.isna(value) else f"{value / 1_000_000:.2f}MM"
+    )
+    projects = sorted(df["Project"].dropna().astype(str).unique())
+    latest_labels = df.sort_values(["Project", "Report Date"]).groupby("Project", as_index=False).tail(1)
+
+    line = (
+        alt.Chart(df)
+        .mark_line(point=True, strokeWidth=3)
+        .encode(
+            x=alt.X("yearmonth(Report Date):O", title=None, axis=alt.Axis(format="%b/%y", labelAngle=0)),
+            y=alt.Y("Remaining Contingency:Q", axis=mm_axis("US$")),
+            color=alt.Color("Project:N", title="", scale=contingency_color_scale(projects)),
+            tooltip=[
+                alt.Tooltip("Project:N"),
+                alt.Tooltip("Report Date:T", title="Month", format="%b/%y"),
+                alt.Tooltip("Remaining Contingency:Q", title="Remaining", format=",.0f"),
+                alt.Tooltip("Total Reallocated:Q", title="Total reallocated", format=",.0f"),
+            ],
+        )
+    )
+    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#B91C1C", strokeDash=[5, 5]).encode(y="y:Q")
+    labels = (
+        alt.Chart(latest_labels)
+        .mark_text(align="left", dx=8, dy=-8, fontSize=11, fontWeight="bold")
+        .encode(
+            x=alt.X("yearmonth(Report Date):O"),
+            y=alt.Y("Remaining Contingency:Q"),
+            color=alt.Color("Project:N", title="", scale=contingency_color_scale(projects)),
+            text="Remaining Label:N",
+        )
+    )
+    return (
+        (line + zero + labels)
+        .properties(height=320, title=title, padding={"bottom": 25, "right": 45})
+        .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
+        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="start")
+    )
+
+
+def contingency_change_chart(contingency: pd.DataFrame) -> alt.Chart:
+    df = contingency.copy()
+    if df.empty:
+        return alt.Chart(pd.DataFrame())
+    df["Project"] = df["Project"].astype(str)
+    projects = sorted(df["Project"].dropna().unique())
+    single_project = len(projects) <= 1
+    df["Direction"] = df["Monthly Contingency Change"].map(
+        lambda value: "Increase" if pd.notna(value) and value >= 0 else "Decrease"
+    )
+    totals = (
+        df.groupby("Report Date", as_index=False)["Monthly Contingency Change"]
+        .sum(min_count=1)
+        .dropna(subset=["Monthly Contingency Change"])
+    )
+    totals = totals[totals["Monthly Contingency Change"] != 0].copy()
+    totals["Change Label"] = totals["Monthly Contingency Change"].map(compact_signed_money)
+    max_abs = df["Monthly Contingency Change"].abs().max() if not df.empty else 1
+    label_offset = max(max_abs * 0.06, 25_000)
+    totals["Label Y"] = totals["Monthly Contingency Change"].map(
+        lambda value: value + label_offset if value >= 0 else value - label_offset
+    )
+
+    color_encoding = (
+        alt.Color(
+            "Direction:N",
+            title="",
+            scale=alt.Scale(domain=["Increase", "Decrease"], range=[BRAND_EBONY, BRAND_GOLD]),
+        )
+        if single_project
+        else alt.Color("Project:N", title="", scale=contingency_color_scale(projects))
+    )
+
+    encodings = {
+        "x": alt.X("yearmonth(Report Date):O", title=None, axis=alt.Axis(format="%b/%y", labelAngle=0)),
+        "y": alt.Y("Monthly Contingency Change:Q", axis=compact_usd_axis("US$")),
+        "color": color_encoding,
+        "order": alt.Order("Project:N"),
+        "tooltip": [
+            alt.Tooltip("Project:N"),
+            alt.Tooltip("Direction:N"),
+            alt.Tooltip("Report Date:T", title="Month", format="%b/%y"),
+            alt.Tooltip("Monthly Contingency Change:Q", title="Monthly change", format=",.0f"),
+        ],
+    }
+    label_encodings = {
+        "x": alt.X("yearmonth(Report Date):O"),
+        "y": alt.Y("Label Y:Q", axis=compact_usd_axis("US$")),
+        "text": alt.Text("Change Label:N"),
+        "tooltip": [
+            alt.Tooltip("Report Date:T", title="Month", format="%b/%y"),
+            alt.Tooltip("Monthly Contingency Change:Q", title="Monthly total", format=",.0f"),
+        ],
+    }
+
+    bars = (
+        alt.Chart(df)
+        .mark_bar()
+        .encode(**encodings)
+    )
+    labels = (
+        alt.Chart(totals)
+        .mark_text(fontSize=11, fontWeight="bold", color=BRAND_EBONY)
+        .encode(**label_encodings)
+    )
+    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color=BRAND_GRID).encode(y="y:Q")
+
+    return (
+        (zero + bars + labels)
+        .properties(height=300, title="Monthly Contingency Change", padding={"top": 15, "bottom": 25})
+        .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
+        .configure_header(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
+        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="start")
+    )
+
+
+def contingency_status(row: pd.Series) -> str:
+    remaining = row.get("Remaining Contingency")
+    original = row.get("Original Contingency")
+    if pd.isna(remaining):
+        return "-"
+    if remaining < 0:
+        return "Deficit"
+    if pd.notna(original) and original != 0 and remaining / original < 0.25:
+        return "Low Reserve"
+    return "OK"
+
+
+def format_contingency_table(rows: pd.DataFrame) -> pd.DataFrame:
+    table = rows.copy()
+    table["Status"] = table.apply(contingency_status, axis=1)
+    table["Report Date"] = table["Report Date"].map(date_label)
+    money_cols = [
+        "Original Contingency",
+        "Remaining Contingency",
+        "Monthly Contingency Change",
+        "Total Reallocated",
+        "Contingency Drawn To Date",
+    ]
+    for col in money_cols:
+        if col in table:
+            formatter = signed_money if col in {"Monthly Contingency Change", "Total Reallocated"} else money
+            table[col] = table[col].map(formatter)
+    return table
+
+
 require_password()
 
-st.title("Construction Tracking")
+logo_uri = asset_data_uri(LOGO_FILE)
 st.markdown(
     """
     <style>
@@ -871,6 +1189,16 @@ st.markdown(
     [data-testid="stSidebar"] {
         background: #F1E8D5;
         border-right: 1px solid #E1D4BC;
+    }
+    .sidebar-logo-footer {
+        margin-top: 34px;
+        padding-top: 18px;
+        border-top: 1px solid #E1D4BC;
+    }
+    .sidebar-logo-footer img {
+        width: 142px;
+        height: auto;
+        display: block;
     }
     h1, h2, h3, h4, h5, h6 {
         color: #3D3533 !important;
@@ -920,21 +1248,24 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+st.title("Construction Tracking")
 
 api_base = get_secret("BASEROW_API_BASE", BASEROW_API_BASE)
 baserow_token = get_secret("BASEROW_API_TOKEN", BASEROW_API_TOKEN_DEFAULT)
 projected_table_id = str(get_secret("BASEROW_PROJECTED_TABLE_ID", BASEROW_PROJECTED_TABLE_ID_DEFAULT))
 tracking_table_id = str(get_secret("BASEROW_TRACKING_TABLE_ID", BASEROW_TRACKING_TABLE_ID_DEFAULT))
+contingency_table_id = str(get_secret("BASEROW_CONTINGENCY_TABLE_ID", BASEROW_CONTINGENCY_TABLE_ID_DEFAULT))
 
 if not baserow_token:
     st.error("Missing BASEROW_API_TOKEN. Add it in Streamlit secrets before publishing.")
     st.stop()
 
 try:
-    projected_df, actual_df = load_baserow_data(
+    projected_df, actual_df, contingency_df = load_baserow_data(
         baserow_token,
         projected_table_id,
         tracking_table_id,
+        contingency_table_id,
         api_base,
     )
 except Exception as exc:
@@ -959,14 +1290,14 @@ actual_df = trim_after_completion(
 projected_df = add_month_number(projected_df, "Project", "Month", "Curve Month No")
 actual_df = add_month_number(actual_df, "Project", "Report Month", "Actual Month No")
 
-if projected_df.empty and actual_df.empty:
-    st.error("No CSV files found in the CRM folder.")
+if projected_df.empty and actual_df.empty and contingency_df.empty:
+    st.error("No Baserow rows found for the configured tables.")
     st.stop()
 
 projects = sorted(
-    set(projected_df.get("Project", pd.Series(dtype=str))).union(
-        actual_df.get("Project", pd.Series(dtype=str))
-    )
+    set(projected_df.get("Project", pd.Series(dtype=str)))
+    .union(actual_df.get("Project", pd.Series(dtype=str)))
+    .union(contingency_df.get("Project", pd.Series(dtype=str)))
 )
 if not projects:
     st.warning("No rows loaded yet.")
@@ -981,12 +1312,23 @@ timeline_basis = st.sidebar.radio(
         "by their first available month."
     ),
 )
+if logo_uri:
+    st.sidebar.markdown(
+        f"""
+        <div class="sidebar-logo-footer">
+          <img src="{logo_uri}" alt="Aciona logo" />
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 if selected_project == "All projects":
     p, a = aggregate_portfolio(projected_df, actual_df)
+    c = contingency_df.copy()
 else:
     p = projected_df[projected_df["Project"] == selected_project].copy()
     a = actual_df[actual_df["Project"] == selected_project].copy()
+    c = contingency_df[contingency_df["Project"] == selected_project].copy()
 
 if p.empty:
     st.warning("No projected curve found for this project.")
@@ -1201,3 +1543,77 @@ if not p.empty or not a.empty:
             .configure_title(color=BRAND_EBONY, fontSize=15, anchor="start")
         )
         st.altair_chart(chart, use_container_width=True)
+
+st.markdown("<div style='height: 36px;'></div>", unsafe_allow_html=True)
+st.subheader("Contingency")
+
+if c.empty:
+    st.info("No contingency tracking rows found for this selection.")
+else:
+    contingency_summary = contingency_metrics(c, selected_project)
+    cont_col1, cont_col2 = st.columns(2)
+    with cont_col1:
+        st.markdown(
+            metric_trio_html(
+                "Contingency Reserve",
+                "Original",
+                money(contingency_summary["original"]),
+                "Remaining",
+                money(contingency_summary["remaining"]),
+                "Remaining %",
+                pct(contingency_summary["remaining_pct"]),
+            ),
+            unsafe_allow_html=True,
+        )
+    with cont_col2:
+        st.markdown(
+            metric_trio_html(
+                "Contingency Movement",
+                "Reallocated",
+                signed_money(contingency_summary["reallocated"]),
+                "Drawn",
+                money(contingency_summary["drawn"]),
+                "Latest Report",
+                date_label(contingency_summary["latest_date"]),
+            ),
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
+    chart_df = c.copy()
+    if selected_project == "All projects":
+        line_title = "Remaining Contingency by Project"
+    else:
+        line_title = "Remaining Contingency"
+    st.altair_chart(contingency_line_chart(chart_df, line_title), use_container_width=True)
+
+    st.altair_chart(contingency_change_chart(chart_df), use_container_width=True)
+
+    latest_rows = latest_contingency_by_project(c) if selected_project == "All projects" else c.sort_values("Report Date")
+    display_cols = [
+        "Project",
+        "Report Month Label",
+        "Status",
+        "Original Contingency",
+        "Remaining Contingency",
+        "Monthly Contingency Change",
+        "Total Reallocated",
+        "Contingency Drawn To Date",
+    ]
+    display_rows = format_contingency_table(latest_rows)
+    st.dataframe(
+        display_rows[display_cols].rename(
+            columns={
+                "Report Month Label": "Report Month",
+                "Original Contingency": "Original",
+                "Remaining Contingency": "Remaining",
+                "Monthly Contingency Change": "Monthly Change",
+                "Total Reallocated": "Total Reallocated",
+                "Contingency Drawn To Date": "Drawn To Date",
+            }
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
