@@ -178,11 +178,11 @@ def series_label(series_type: str) -> str:
 
 def month_axis(label_padding: int = 12, label_angle: int | None = None) -> alt.Axis:
     if st.session_state.get("language", "pt") == "pt":
-        angle = -35 if label_angle is None else label_angle
+        angle = 0 if label_angle is None else label_angle
         return alt.Axis(
             labelExpr=(
-                "['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto',"
-                "'Setembro','Outubro','Novembro','Dezembro'][month(datum.value)]"
+                "['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][month(datum.value)] "
+                "+ '/' + substring('' + year(datum.value), 2, 4)"
             ),
             labelAngle=angle,
             labelPadding=label_padding,
@@ -630,7 +630,11 @@ def month_count(start, end) -> str:
 def date_label(value) -> str:
     if pd.isna(value):
         return "-"
-    return pd.to_datetime(value).strftime("%b/%y")
+    date = pd.to_datetime(value)
+    if st.session_state.get("language", "pt") == "pt":
+        months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+        return f"{months[date.month - 1]}/{date.strftime('%y')}"
+    return date.strftime("%b/%y")
 
 
 def asset_data_uri(path: Path) -> str:
