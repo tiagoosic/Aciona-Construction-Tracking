@@ -646,7 +646,7 @@ def month_count_value(start, end) -> int | None:
         return None
     start = pd.to_datetime(start)
     end = pd.to_datetime(end)
-    return (end.year - start.year) * 12 + (end.month - start.month) + 1
+    return (end.year - start.year) * 12 + (end.month - start.month)
 
 
 def signed_month_count(value: int | None) -> str:
