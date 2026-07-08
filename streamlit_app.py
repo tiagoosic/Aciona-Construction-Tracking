@@ -1,6 +1,9 @@
 from pathlib import Path
 
 import base64
+import json
+from html import escape
+
 import altair as alt
 import pandas as pd
 import requests
@@ -53,6 +56,116 @@ PROJECT_COLOR_PAIRS = [
     ("#BE123C", "#FDA4AF"),
     ("#0F766E", "#99F6E4"),
 ]
+
+TRANSLATIONS = {
+    "en": {
+        "app_title": "Construction Tracking",
+        "password": "Password",
+        "invalid_password": "Invalid password.",
+        "missing_token": "Missing BASEROW_API_TOKEN. Add it in Streamlit secrets before publishing.",
+        "baserow_failed": "Baserow connection failed",
+        "no_rows": "No Baserow rows found for the configured tables.",
+        "no_rows_yet": "No rows loaded yet.",
+        "language": "Language",
+        "project": "Project",
+        "all_projects": "All projects",
+        "timeline_basis": "Timeline basis",
+        "calendar_date": "Calendar date",
+        "month_since_start": "Month since start",
+        "timeline_help": "Calendar date shows schedule delay. Month since start aligns projected and actual curves by their first available month.",
+        "no_projected": "No projected curve found for this project.",
+        "no_actual": "No actual tracking found for this project yet.",
+        "cost": "Cost",
+        "actual": "Actual",
+        "projected": "Projected",
+        "variance": "Variance",
+        "completion": "Completion",
+        "timeline": "Timeline",
+        "start": "Start",
+        "projected_completion": "Projected Completion",
+        "months": "Months",
+        "cumulative_hard_cost": "Cumulative Hard Cost",
+        "cumulative_hard_cost_by_project": "Cumulative Hard Cost by Project",
+        "monthly_hard_cost": "Monthly Hard Cost",
+        "contingency": "Contingency",
+        "no_contingency": "No contingency tracking rows found for this selection.",
+        "contingency_reserve": "Contingency Reserve",
+        "original": "Original",
+        "remaining": "Remaining",
+        "remaining_pct": "Remaining %",
+        "contingency_movement": "Contingency Movement",
+        "reallocated": "Reallocated",
+        "drawn": "Drawn",
+        "latest_report": "Latest Report",
+        "remaining_contingency": "Remaining Contingency",
+        "remaining_contingency_by_project": "Remaining Contingency by Project",
+        "monthly_contingency_change": "Monthly Contingency Change",
+        "report_month": "Report Month",
+        "status": "Status",
+        "monthly_change": "Monthly Change",
+        "drawn_to_date": "Drawn To Date",
+        "export_title": "Export",
+        "export_help": "Download an A4 landscape HTML report with the current charts. Open it in a browser and print/save as PDF, or use it as the source for presentation screenshots.",
+        "download_a4_html": "Download A4 report (HTML)",
+        "export_filename": "construction_tracking_a4.html",
+    },
+    "pt": {
+        "app_title": "Acompanhamento de Obra",
+        "password": "Senha",
+        "invalid_password": "Senha inválida.",
+        "missing_token": "BASEROW_API_TOKEN não encontrado. Adicione o token nos secrets do Streamlit antes de publicar.",
+        "baserow_failed": "Falha na conexão com o Baserow",
+        "no_rows": "Nenhuma linha encontrada nas tabelas configuradas do Baserow.",
+        "no_rows_yet": "Nenhuma linha carregada ainda.",
+        "language": "Idioma",
+        "project": "Projeto",
+        "all_projects": "Todos os projetos",
+        "timeline_basis": "Base da linha do tempo",
+        "calendar_date": "Data calendário",
+        "month_since_start": "Mês desde início",
+        "timeline_help": "Data calendário mostra atraso de cronograma. Mês desde início alinha a curva projetada e a realizada pelo primeiro mês disponível.",
+        "no_projected": "Não há curva projetada para este projeto.",
+        "no_actual": "Ainda não há acompanhamento realizado para este projeto.",
+        "cost": "Custo",
+        "actual": "Realizado",
+        "projected": "Projetado",
+        "variance": "Desvio",
+        "completion": "Avanço",
+        "timeline": "Cronograma",
+        "start": "Início",
+        "projected_completion": "Conclusão Projetada",
+        "months": "Meses",
+        "cumulative_hard_cost": "Hard Cost Acumulado",
+        "cumulative_hard_cost_by_project": "Hard Cost Acumulado por Projeto",
+        "monthly_hard_cost": "Hard Cost Mensal",
+        "contingency": "Contingência",
+        "no_contingency": "Não há linhas de contingência para esta seleção.",
+        "contingency_reserve": "Reserva de Contingência",
+        "original": "Original",
+        "remaining": "Saldo",
+        "remaining_pct": "Saldo %",
+        "contingency_movement": "Movimentação da Contingência",
+        "reallocated": "Realocado",
+        "drawn": "Utilizado",
+        "latest_report": "Último Relatório",
+        "remaining_contingency": "Saldo de Contingência",
+        "remaining_contingency_by_project": "Saldo de Contingência por Projeto",
+        "monthly_contingency_change": "Variação Mensal da Contingência",
+        "report_month": "Mês do Relatório",
+        "status": "Status",
+        "monthly_change": "Variação Mensal",
+        "drawn_to_date": "Utilizado Até a Data",
+        "export_title": "Exportação",
+        "export_help": "Baixe um relatório HTML em A4 paisagem com os gráficos atuais. Abra no navegador e imprima/salve em PDF, ou use como fonte para capturas em apresentação.",
+        "download_a4_html": "Baixar relatório A4 (HTML)",
+        "export_filename": "acompanhamento_obra_a4.html",
+    },
+}
+
+
+def tr(key: str) -> str:
+    language = st.session_state.get("language", "pt")
+    return TRANSLATIONS.get(language, TRANSLATIONS["pt"]).get(key, key)
 
 
 st.set_page_config(
@@ -177,13 +290,13 @@ def require_password() -> None:
     if st.session_state.get("authenticated"):
         return
 
-    st.title("Construction Tracking")
-    entered = st.text_input("Password", type="password")
+    st.title(tr("app_title"))
+    entered = st.text_input(tr("password"), type="password")
     if entered == password:
         st.session_state["authenticated"] = True
         st.rerun()
     elif entered:
-        st.error("Invalid password.")
+        st.error(tr("invalid_password"))
     st.stop()
 
 
@@ -1060,7 +1173,7 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str) -> alt.Chart:
     )
 
 
-def contingency_change_chart(contingency: pd.DataFrame) -> alt.Chart:
+def contingency_change_chart(contingency: pd.DataFrame, title: str) -> alt.Chart:
     df = contingency.copy()
     if df.empty:
         return alt.Chart(pd.DataFrame())
@@ -1129,7 +1242,7 @@ def contingency_change_chart(contingency: pd.DataFrame) -> alt.Chart:
 
     return (
         (zero + bars + labels)
-        .properties(height=300, title="Monthly Contingency Change", padding={"top": 15, "bottom": 25})
+        .properties(height=300, title=title, padding={"top": 15, "bottom": 25})
         .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
         .configure_header(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
         .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
@@ -1166,6 +1279,151 @@ def format_contingency_table(rows: pd.DataFrame) -> pd.DataFrame:
             table[col] = table[col].map(formatter)
     return table
 
+
+def altair_spec(chart: alt.Chart) -> dict:
+    return json.loads(chart.to_json())
+
+
+def build_a4_report_html(
+    title: str,
+    subtitle: str,
+    summary_html: str,
+    charts: list[tuple[str, alt.Chart]],
+) -> str:
+    chart_divs = []
+    embed_calls = []
+    for index, (chart_title, chart) in enumerate(charts):
+        chart_id = f"chart-{index}"
+        chart_divs.append(
+            f"""
+            <section class="chart-section">
+              <h2>{escape(chart_title)}</h2>
+              <div id="{chart_id}" class="chart"></div>
+            </section>
+            """
+        )
+        spec = altair_spec(chart)
+        embed_calls.append(
+            f"vegaEmbed('#{chart_id}', {json.dumps(spec)}, {{actions: true, renderer: 'svg'}});"
+        )
+
+    return f"""<!doctype html>
+<html lang="{escape(st.session_state.get('language', 'pt'))}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{escape(title)}</title>
+  <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+  <style>
+    @page {{ size: A4 landscape; margin: 12mm; }}
+    body {{
+      margin: 0;
+      background: #FBF8F1;
+      color: #3D3533;
+      font-family: Arial, Helvetica, sans-serif;
+    }}
+    .page {{
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 28px 34px 40px;
+    }}
+    h1 {{
+      margin: 0 0 6px;
+      font-size: 30px;
+      letter-spacing: 0;
+      color: #3D3533;
+    }}
+    .subtitle {{
+      margin: 0 0 18px;
+      color: #82613F;
+      font-size: 13px;
+    }}
+    .summary {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 18px 0 24px;
+    }}
+    .metric-card {{
+      border: 1px solid #E1D4BC;
+      border-radius: 8px;
+      padding: 14px 16px;
+      background: #FFFDF8;
+      break-inside: avoid;
+    }}
+    .metric-title {{
+      color: #82613F;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-bottom: 12px;
+    }}
+    .metric-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .metric-grid-3 {{
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }}
+    .metric-label {{
+      color: #82613F;
+      font-size: 10px;
+      margin-bottom: 4px;
+    }}
+    .metric-value {{
+      color: #3D3533;
+      font-size: 20px;
+      line-height: 1.1;
+      white-space: nowrap;
+    }}
+    .chart-section {{
+      background: #FFFDF8;
+      border: 1px solid #E1D4BC;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 18px;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }}
+    .chart-section h2 {{
+      margin: 0 0 8px;
+      font-size: 15px;
+      color: #3D3533;
+    }}
+    .chart {{
+      width: 100%;
+      min-height: 340px;
+    }}
+    @media print {{
+      body {{ background: white; }}
+      .page {{ max-width: none; padding: 0; }}
+      .chart-section {{ box-shadow: none; }}
+    }}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>{escape(title)}</h1>
+    <p class="subtitle">{escape(subtitle)}</p>
+    <div class="summary">{summary_html}</div>
+    {''.join(chart_divs)}
+  </main>
+  <script>
+    {''.join(embed_calls)}
+  </script>
+</body>
+</html>"""
+
+
+language_options = {"Português": "pt", "English": "en"}
+current_language = st.session_state.get("language", "pt")
+language_index = list(language_options.values()).index(current_language) if current_language in language_options.values() else 0
+language_choice = st.sidebar.selectbox("Idioma / Language", list(language_options.keys()), index=language_index)
+st.session_state["language"] = language_options[language_choice]
 
 require_password()
 
@@ -1248,7 +1506,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-st.title("Construction Tracking")
+st.title(tr("app_title"))
 
 api_base = get_secret("BASEROW_API_BASE", BASEROW_API_BASE)
 baserow_token = get_secret("BASEROW_API_TOKEN", BASEROW_API_TOKEN_DEFAULT)
@@ -1257,7 +1515,7 @@ tracking_table_id = str(get_secret("BASEROW_TRACKING_TABLE_ID", BASEROW_TRACKING
 contingency_table_id = str(get_secret("BASEROW_CONTINGENCY_TABLE_ID", BASEROW_CONTINGENCY_TABLE_ID_DEFAULT))
 
 if not baserow_token:
-    st.error("Missing BASEROW_API_TOKEN. Add it in Streamlit secrets before publishing.")
+    st.error(tr("missing_token"))
     st.stop()
 
 try:
@@ -1269,7 +1527,7 @@ try:
         api_base,
     )
 except Exception as exc:
-    st.error(f"Baserow connection failed: {exc}")
+    st.error(f"{tr('baserow_failed')}: {exc}")
     st.stop()
 
 projected_df = normalize_projected_completion_month(projected_df)
@@ -1291,7 +1549,7 @@ projected_df = add_month_number(projected_df, "Project", "Month", "Curve Month N
 actual_df = add_month_number(actual_df, "Project", "Report Month", "Actual Month No")
 
 if projected_df.empty and actual_df.empty and contingency_df.empty:
-    st.error("No Baserow rows found for the configured tables.")
+    st.error(tr("no_rows"))
     st.stop()
 
 projects = sorted(
@@ -1300,28 +1558,21 @@ projects = sorted(
     .union(contingency_df.get("Project", pd.Series(dtype=str)))
 )
 if not projects:
-    st.warning("No rows loaded yet.")
+    st.warning(tr("no_rows_yet"))
     st.stop()
-selected_project = st.sidebar.selectbox("Project", ["All projects"] + projects)
-timeline_basis = st.sidebar.radio(
-    "Timeline basis",
-    ["Calendar date", "Month since start"],
-    index=1,
-    help=(
-        "Calendar date shows schedule delay. Month since start aligns projected and actual curves "
-        "by their first available month."
-    ),
+selected_project = st.sidebar.selectbox(
+    tr("project"),
+    ["All projects"] + projects,
+    format_func=lambda value: tr("all_projects") if value == "All projects" else value,
 )
-if logo_uri:
-    st.sidebar.markdown(
-        f"""
-        <div class="sidebar-logo-footer">
-          <img src="{logo_uri}" alt="Aciona logo" />
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
+timeline_options = ["Calendar date", "Month since start"]
+timeline_basis = st.sidebar.radio(
+    tr("timeline_basis"),
+    timeline_options,
+    index=1,
+    format_func=lambda value: tr("calendar_date") if value == "Calendar date" else tr("month_since_start"),
+    help=tr("timeline_help"),
+)
 if selected_project == "All projects":
     p, a = aggregate_portfolio(projected_df, actual_df)
     c = contingency_df.copy()
@@ -1331,9 +1582,9 @@ else:
     c = contingency_df[contingency_df["Project"] == selected_project].copy()
 
 if p.empty:
-    st.warning("No projected curve found for this project.")
+    st.warning(tr("no_projected"))
 if a.empty:
-    st.warning("No actual tracking found for this project yet.")
+    st.warning(tr("no_actual"))
 
 latest_actual = a.sort_values("Report Month").tail(1)
 latest_projected = p.sort_values("Month").tail(1)
@@ -1373,48 +1624,46 @@ completion_delta = (
     else None
 )
 
+cost_card_html = metric_trio_html(
+    tr("cost"),
+    tr("actual"),
+    money_mm(actual_cumulative_hard_cost),
+    tr("projected"),
+    money_mm(projected_cumulative_hard_cost),
+    tr("variance"),
+    signed_money_mm(cost_delta),
+)
+completion_card_html = metric_trio_html(
+    tr("completion"),
+    tr("actual"),
+    pct(actual_completion),
+    tr("projected"),
+    pct(projected_completion),
+    tr("variance"),
+    signed_pct(completion_delta),
+)
+timeline_card_html = metric_trio_html(
+    tr("timeline"),
+    tr("start"),
+    date_label(projected_start),
+    tr("projected_completion"),
+    date_label(projected_completion_date),
+    tr("months"),
+    month_count(projected_start, projected_completion_date),
+)
+summary_cards_html = cost_card_html + completion_card_html + timeline_card_html
+
 card1, card2, card3 = st.columns(3)
 with card1:
-    st.markdown(
-        metric_trio_html(
-            "Cost",
-            "Actual",
-            money_mm(actual_cumulative_hard_cost),
-            "Projected",
-            money_mm(projected_cumulative_hard_cost),
-            "Variance",
-            signed_money_mm(cost_delta),
-        ),
-        unsafe_allow_html=True,
-    )
+    st.markdown(cost_card_html, unsafe_allow_html=True)
 with card2:
-    st.markdown(
-        metric_trio_html(
-            "Completion",
-            "Actual",
-            pct(actual_completion),
-            "Projected",
-            pct(projected_completion),
-            "Variance",
-            signed_pct(completion_delta),
-        ),
-        unsafe_allow_html=True,
-    )
+    st.markdown(completion_card_html, unsafe_allow_html=True)
 with card3:
-    st.markdown(
-        metric_trio_html(
-            "Timeline",
-            "Start",
-            date_label(projected_start),
-            "Projected Completion",
-            date_label(projected_completion_date),
-            "Months",
-            month_count(projected_start, projected_completion_date),
-        ),
-        unsafe_allow_html=True,
-    )
+    st.markdown(timeline_card_html, unsafe_allow_html=True)
 
 st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+
+export_charts: list[tuple[str, alt.Chart]] = []
 
 if not p.empty or not a.empty:
     cumulative = []
@@ -1445,27 +1694,25 @@ if not p.empty or not a.empty:
             [["Date", "Series", "Value", "CompletionPct", "MonthNo"]]
         )
     if cumulative:
-        st.altair_chart(
-            cumulative_cost_chart(
-                pd.concat(cumulative, ignore_index=True),
-                "Cumulative Hard Cost",
-                label_all_points=True,
-                timeline_basis=timeline_basis,
-            ),
-            use_container_width=True,
+        cumulative_chart = cumulative_cost_chart(
+            pd.concat(cumulative, ignore_index=True),
+            tr("cumulative_hard_cost"),
+            label_all_points=True,
+            timeline_basis=timeline_basis,
         )
+        export_charts.append((tr("cumulative_hard_cost"), cumulative_chart))
+        st.altair_chart(cumulative_chart, use_container_width=True)
 
     if selected_project == "All projects":
         detail = project_cumulative_detail(projected_df, actual_df)
         if not detail.empty:
-            st.altair_chart(
-                cumulative_cost_chart(
-                    detail,
-                    "Cumulative Hard Cost by Project",
-                    timeline_basis=timeline_basis,
-                ),
-                use_container_width=True,
+            project_chart = cumulative_cost_chart(
+                detail,
+                tr("cumulative_hard_cost_by_project"),
+                timeline_basis=timeline_basis,
             )
+            export_charts.append((tr("cumulative_hard_cost_by_project"), project_chart))
+            st.altair_chart(project_chart, use_container_width=True)
 
     monthly = []
     if not p.empty:
@@ -1537,30 +1784,31 @@ if not p.empty or not a.empty:
                 xOffset="Series:N",
                 tooltip=monthly_tooltip,
             )
-            .properties(height=320, title="Monthly Hard Cost")
+            .properties(height=320, title=tr("monthly_hard_cost"))
             .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
             .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
             .configure_title(color=BRAND_EBONY, fontSize=15, anchor="start")
         )
+        export_charts.append((tr("monthly_hard_cost"), chart))
         st.altair_chart(chart, use_container_width=True)
 
 st.markdown("<div style='height: 36px;'></div>", unsafe_allow_html=True)
-st.subheader("Contingency")
+st.subheader(tr("contingency"))
 
 if c.empty:
-    st.info("No contingency tracking rows found for this selection.")
+    st.info(tr("no_contingency"))
 else:
     contingency_summary = contingency_metrics(c, selected_project)
     cont_col1, cont_col2 = st.columns(2)
     with cont_col1:
         st.markdown(
             metric_trio_html(
-                "Contingency Reserve",
-                "Original",
+                tr("contingency_reserve"),
+                tr("original"),
                 money(contingency_summary["original"]),
-                "Remaining",
+                tr("remaining"),
                 money(contingency_summary["remaining"]),
-                "Remaining %",
+                tr("remaining_pct"),
                 pct(contingency_summary["remaining_pct"]),
             ),
             unsafe_allow_html=True,
@@ -1568,12 +1816,12 @@ else:
     with cont_col2:
         st.markdown(
             metric_trio_html(
-                "Contingency Movement",
-                "Reallocated",
+                tr("contingency_movement"),
+                tr("reallocated"),
                 signed_money(contingency_summary["reallocated"]),
-                "Drawn",
+                tr("drawn"),
                 money(contingency_summary["drawn"]),
-                "Latest Report",
+                tr("latest_report"),
                 date_label(contingency_summary["latest_date"]),
             ),
             unsafe_allow_html=True,
@@ -1583,12 +1831,16 @@ else:
 
     chart_df = c.copy()
     if selected_project == "All projects":
-        line_title = "Remaining Contingency by Project"
+        line_title = tr("remaining_contingency_by_project")
     else:
-        line_title = "Remaining Contingency"
-    st.altair_chart(contingency_line_chart(chart_df, line_title), use_container_width=True)
+        line_title = tr("remaining_contingency")
+    contingency_line = contingency_line_chart(chart_df, line_title)
+    export_charts.append((line_title, contingency_line))
+    st.altair_chart(contingency_line, use_container_width=True)
 
-    st.altair_chart(contingency_change_chart(chart_df), use_container_width=True)
+    contingency_change = contingency_change_chart(chart_df, tr("monthly_contingency_change"))
+    export_charts.append((tr("monthly_contingency_change"), contingency_change))
+    st.altair_chart(contingency_change, use_container_width=True)
 
     latest_rows = latest_contingency_by_project(c) if selected_project == "All projects" else c.sort_values("Report Date")
     display_cols = [
@@ -1605,15 +1857,45 @@ else:
     st.dataframe(
         display_rows[display_cols].rename(
             columns={
-                "Report Month Label": "Report Month",
-                "Original Contingency": "Original",
-                "Remaining Contingency": "Remaining",
-                "Monthly Contingency Change": "Monthly Change",
-                "Total Reallocated": "Total Reallocated",
-                "Contingency Drawn To Date": "Drawn To Date",
+                "Project": tr("project"),
+                "Report Month Label": tr("report_month"),
+                "Status": tr("status"),
+                "Original Contingency": tr("original"),
+                "Remaining Contingency": tr("remaining"),
+                "Monthly Contingency Change": tr("monthly_change"),
+                "Total Reallocated": tr("reallocated"),
+                "Contingency Drawn To Date": tr("drawn_to_date"),
             }
         ),
         use_container_width=True,
         hide_index=True,
     )
 
+if export_charts:
+    report_scope = tr("all_projects") if selected_project == "All projects" else selected_project
+    report_subtitle = f"{report_scope} | {tr('timeline_basis')}: {tr('calendar_date') if timeline_basis == 'Calendar date' else tr('month_since_start')}"
+    report_html = build_a4_report_html(
+        tr("app_title"),
+        report_subtitle,
+        summary_cards_html,
+        export_charts,
+    )
+    st.sidebar.markdown(f"### {tr('export_title')}")
+    st.sidebar.caption(tr("export_help"))
+    st.sidebar.download_button(
+        tr("download_a4_html"),
+        data=report_html.encode("utf-8"),
+        file_name=tr("export_filename"),
+        mime="text/html",
+        use_container_width=True,
+    )
+
+if logo_uri:
+    st.sidebar.markdown(
+        f"""
+        <div class="sidebar-logo-footer">
+          <img src="{logo_uri}" alt="Aciona logo" />
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
