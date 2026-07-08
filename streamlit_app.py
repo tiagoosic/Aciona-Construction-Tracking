@@ -82,7 +82,12 @@ TRANSLATIONS = {
         "completion": "Completion",
         "timeline": "Timeline",
         "start": "Start",
+        "planned": "Planned",
+        "forecast": "Forecast",
         "projected_completion": "Projected Completion",
+        "actual_start": "Actual Start",
+        "start_variance": "Start Variance",
+        "completion_variance": "Completion Variance",
         "months": "Months",
         "cumulative_hard_cost": "Cumulative Hard Cost",
         "cumulative_hard_cost_by_project": "Cumulative Hard Cost by Project",
@@ -133,7 +138,12 @@ TRANSLATIONS = {
         "completion": "Avanço",
         "timeline": "Cronograma",
         "start": "Início",
+        "planned": "Projetado",
+        "forecast": "Forecast",
         "projected_completion": "Conclusão Projetada",
+        "actual_start": "Início Realizado",
+        "start_variance": "Desvio Início",
+        "completion_variance": "Desvio Conclusão",
         "months": "Meses",
         "cumulative_hard_cost": "Avanço de Obra Acumulado",
         "cumulative_hard_cost_by_project": "Avanço de Obra Acumulado por Projeto",
@@ -627,6 +637,17 @@ def month_count(start, end) -> str:
     return f"{months:.0f}"
 
 
+def month_delta_label(start, end) -> str:
+    if pd.isna(start) or pd.isna(end):
+        return "-"
+    start = pd.to_datetime(start)
+    end = pd.to_datetime(end)
+    months = (end.year - start.year) * 12 + (end.month - start.month)
+    if months == 0:
+        return "0m"
+    return f"{months:+.0f}m"
+
+
 def date_label(value) -> str:
     if pd.isna(value):
         return "-"
@@ -687,6 +708,50 @@ def metric_trio_html(
         <div>
           <div class="metric-label">{third_label}</div>
           <div class="metric-value">{third_value}</div>
+        </div>
+      </div>
+    </div>
+    """
+
+
+def metric_schedule_html(
+    title: str,
+    planned_start: str,
+    actual_start: str,
+    start_variance: str,
+    planned_completion: str,
+    forecast_completion: str,
+    completion_variance: str,
+) -> str:
+    return f"""
+    <div class="metric-card">
+      <div class="metric-title">{title}</div>
+      <div class="schedule-grid">
+        <div class="schedule-row-title">{tr("start")}</div>
+        <div>
+          <div class="metric-label">{tr("planned")}</div>
+          <div class="metric-value metric-value-small">{planned_start}</div>
+        </div>
+        <div>
+          <div class="metric-label">{tr("actual_start")}</div>
+          <div class="metric-value metric-value-small">{actual_start}</div>
+        </div>
+        <div>
+          <div class="metric-label">{tr("start_variance")}</div>
+          <div class="metric-value metric-value-small">{start_variance}</div>
+        </div>
+        <div class="schedule-row-title">{tr("projected_completion")}</div>
+        <div>
+          <div class="metric-label">{tr("planned")}</div>
+          <div class="metric-value metric-value-small">{planned_completion}</div>
+        </div>
+        <div>
+          <div class="metric-label">{tr("forecast")}</div>
+          <div class="metric-value metric-value-small">{forecast_completion}</div>
+        </div>
+        <div>
+          <div class="metric-label">{tr("completion_variance")}</div>
+          <div class="metric-value metric-value-small">{completion_variance}</div>
         </div>
       </div>
     </div>
@@ -1407,6 +1472,23 @@ def build_a4_report_html(
       line-height: 1.1;
       white-space: nowrap;
     }}
+    .metric-value-small {{
+      font-size: 15px;
+    }}
+    .schedule-grid {{
+      display: grid;
+      grid-template-columns: 0.8fr 1fr 1fr 0.9fr;
+      gap: 8px 12px;
+      align-items: end;
+    }}
+    .schedule-row-title {{
+      color: #82613F;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      padding-bottom: 3px;
+    }}
     .chart-section {{
       background: #FFFDF8;
       border: 1px solid #E1D4BC;
@@ -1529,6 +1611,23 @@ st.markdown(
         font-weight: 500;
         white-space: nowrap;
     }
+    .metric-value-small {
+        font-size: 1.05rem;
+    }
+    .schedule-grid {
+        display: grid;
+        grid-template-columns: 0.8fr 1fr 1fr 0.9fr;
+        gap: 10px 14px;
+        align-items: end;
+    }
+    .schedule-row-title {
+        color: #82613F;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        padding-bottom: 3px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1620,9 +1719,21 @@ latest_actual_row = latest_actual.iloc[0] if not latest_actual.empty else None
 latest_projected_row = latest_projected.iloc[0] if not latest_projected.empty else None
 comparable_projected = comparable_projected_row(p, latest_actual_row, timeline_basis)
 projected_start = p["Month"].min() if not p.empty else pd.NaT
+actual_start = a["Report Month"].min() if not a.empty else pd.NaT
 projected_completion_date = (
     latest_projected_row["Projected Completion Date"] if latest_projected_row is not None else pd.NaT
 )
+forecast_completion_date = (
+    latest_actual_row["Forecast Completion Date"]
+    if latest_actual_row is not None
+    and "Forecast Completion Date" in latest_actual_row
+    and pd.notna(latest_actual_row["Forecast Completion Date"])
+    else pd.NaT
+)
+if pd.isna(forecast_completion_date):
+    forecast_completion_date = projected_completion_date
+start_delta = month_delta_label(projected_start, actual_start)
+completion_delta_months = month_delta_label(projected_completion_date, forecast_completion_date)
 
 actual_completion = latest_actual_row["Cumulative Completion %"] if latest_actual_row is not None else None
 projected_completion = (
@@ -1669,14 +1780,14 @@ completion_card_html = metric_trio_html(
     tr("variance"),
     signed_pct(completion_delta),
 )
-timeline_card_html = metric_trio_html(
+timeline_card_html = metric_schedule_html(
     tr("timeline"),
-    tr("start"),
     date_label(projected_start),
-    tr("projected_completion"),
+    date_label(actual_start),
+    start_delta,
     date_label(projected_completion_date),
-    tr("months"),
-    month_count(projected_start, projected_completion_date),
+    date_label(forecast_completion_date),
+    completion_delta_months,
 )
 summary_cards_html = cost_card_html + completion_card_html + timeline_card_html
 
