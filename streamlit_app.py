@@ -73,6 +73,9 @@ TRANSLATIONS = {
         "calendar_date": "Calendar date",
         "month_since_start": "Month since start",
         "timeline_help": "Calendar date shows schedule delay. Month since start aligns projected and actual curves by their first available month.",
+        "chart_frequency": "Chart frequency",
+        "monthly": "Monthly",
+        "quarterly": "Quarterly",
         "no_projected": "No projected curve found for this project.",
         "no_actual": "No actual tracking found for this project yet.",
         "cost": "Cost",
@@ -95,6 +98,7 @@ TRANSLATIONS = {
         "cumulative_hard_cost": "Cumulative Hard Cost",
         "cumulative_hard_cost_by_project": "Cumulative Hard Cost by Project",
         "monthly_hard_cost": "Monthly Hard Cost",
+        "quarterly_hard_cost": "Quarterly Hard Cost",
         "contingency": "Contingency",
         "no_contingency": "No contingency tracking rows found for this selection.",
         "contingency_reserve": "Contingency Reserve",
@@ -108,6 +112,7 @@ TRANSLATIONS = {
         "remaining_contingency": "Remaining Contingency",
         "remaining_contingency_by_project": "Remaining Contingency by Project",
         "monthly_contingency_change": "Monthly Contingency Change",
+        "quarterly_contingency_change": "Quarterly Contingency Change",
         "report_month": "Report Month",
         "status": "Status",
         "monthly_change": "Monthly Change",
@@ -132,6 +137,9 @@ TRANSLATIONS = {
         "calendar_date": "Data calendário",
         "month_since_start": "Mês desde início",
         "timeline_help": "Data calendário mostra atraso de cronograma. Mês desde início alinha a curva projetada e a realizada pelo primeiro mês disponível.",
+        "chart_frequency": "Frequência dos gráficos",
+        "monthly": "Mensal",
+        "quarterly": "Trimestral",
         "no_projected": "Não há curva projetada para este projeto.",
         "no_actual": "Ainda não há acompanhamento realizado para este projeto.",
         "cost": "Custo",
@@ -154,6 +162,7 @@ TRANSLATIONS = {
         "cumulative_hard_cost": "Avanço de Obra Acumulado",
         "cumulative_hard_cost_by_project": "Avanço de Obra Acumulado por Projeto",
         "monthly_hard_cost": "Desembolso de Obra Mensal",
+        "quarterly_hard_cost": "Desembolso de Obra Trimestral",
         "contingency": "Contingência",
         "no_contingency": "Não há linhas de contingência para esta seleção.",
         "contingency_reserve": "Reserva de Contingência",
@@ -167,6 +176,7 @@ TRANSLATIONS = {
         "remaining_contingency": "Saldo de Contingência",
         "remaining_contingency_by_project": "Saldo de Contingência por Projeto",
         "monthly_contingency_change": "Variação Mensal da Contingência",
+        "quarterly_contingency_change": "Variação Trimestral da Contingência",
         "report_month": "Mês do Relatório",
         "status": "Status",
         "monthly_change": "Variação Mensal",
@@ -204,6 +214,15 @@ def month_axis(label_padding: int = 12, label_angle: int | None = None) -> alt.A
             labelPadding=label_padding,
         )
     return alt.Axis(format="%b/%y", labelAngle=0 if label_angle is None else label_angle, labelPadding=label_padding)
+
+
+def add_quarter_fields(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
+    out = df.copy()
+    out[date_col] = parse_date(out[date_col])
+    quarter = out[date_col].dt.to_period("Q")
+    out["PeriodLabel"] = quarter.map(lambda value: f"{value.quarter}Q/{str(value.year)[-2:]}")
+    out["PeriodSort"] = quarter.map(lambda value: value.year * 4 + value.quarter)
+    return out
 
 
 st.set_page_config(
@@ -888,11 +907,67 @@ def add_aligned_display_date(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def chart_group_columns(df: pd.DataFrame) -> list[str]:
+    return [
+        col
+        for col in ["Project", "Series", "Type", "ColorSeries", "Direction"]
+        if col in df.columns
+    ]
+
+
+def aggregate_last_by_quarter(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+    out = add_quarter_fields(df, date_col)
+    group_cols = chart_group_columns(out) + ["PeriodSort", "PeriodLabel"]
+    return (
+        out.sort_values(group_cols + [date_col])
+        .groupby(group_cols, as_index=False, dropna=False)
+        .tail(1)
+        .sort_values(["PeriodSort"] + chart_group_columns(out))
+        .reset_index(drop=True)
+    )
+
+
+def aggregate_sum_by_quarter(df: pd.DataFrame, date_col: str, value_col: str = "Value") -> pd.DataFrame:
+    if df.empty:
+        return df
+    out = add_quarter_fields(df, date_col)
+    group_cols = chart_group_columns(out) + ["PeriodSort", "PeriodLabel"]
+    numeric_cols = [value_col]
+    if "Monthly Contingency Change" in out.columns and value_col != "Monthly Contingency Change":
+        numeric_cols.append("Monthly Contingency Change")
+    agg: dict[str, str] = {col: "sum" for col in numeric_cols if col in out.columns}
+    agg[date_col] = "max"
+    if "Date" in out.columns and "Date" not in agg:
+        agg["Date"] = "max"
+    if "Report Date" in out.columns and "Report Date" not in agg:
+        agg["Report Date"] = "max"
+    return (
+        out.groupby(group_cols, as_index=False, dropna=False)
+        .agg(agg)
+        .sort_values(["PeriodSort"] + chart_group_columns(out))
+        .reset_index(drop=True)
+    )
+
+
+def period_sort_list(df: pd.DataFrame) -> list[str]:
+    if "PeriodLabel" not in df or "PeriodSort" not in df:
+        return []
+    return (
+        df[["PeriodLabel", "PeriodSort"]]
+        .drop_duplicates()
+        .sort_values("PeriodSort")["PeriodLabel"]
+        .tolist()
+    )
+
+
 def cumulative_cost_chart(
     df: pd.DataFrame,
     title: str,
     label_all_points: bool = False,
     timeline_basis: str = "Calendar date",
+    chart_frequency: str = "Monthly",
 ) -> alt.Chart:
     df = df.copy()
     tooltip = [
@@ -903,13 +978,27 @@ def cumulative_cost_chart(
     ]
     if timeline_basis == "Month since start":
         df = add_aligned_display_date(df)
+        period_date_col = "Display Date"
+        tooltip.insert(1, alt.Tooltip("Month No:Q", title="Month #", format=".0f"))
+        tooltip.insert(2, alt.Tooltip("Display Date:T", title="Aligned month", format="%b/%y"))
+    else:
+        period_date_col = "Date"
+
+    if chart_frequency == "Quarterly":
+        df = aggregate_last_by_quarter(df, period_date_col)
+        x_encoding = alt.X(
+            "PeriodLabel:N",
+            title=None,
+            sort=period_sort_list(df),
+            axis=alt.Axis(labelAngle=0, labelPadding=12),
+        )
+        tooltip.insert(0, alt.Tooltip("PeriodLabel:N", title="Quarter"))
+    elif timeline_basis == "Month since start":
         x_encoding = alt.X(
             "yearmonth(Display Date):O",
             title=None,
             axis=month_axis(label_padding=12),
         )
-        tooltip.insert(1, alt.Tooltip("Month No:Q", title="Month #", format=".0f"))
-        tooltip.insert(2, alt.Tooltip("Display Date:T", title="Aligned month", format="%b/%y"))
     else:
         x_encoding = alt.X(
             "yearmonth(Date):O",
@@ -1255,10 +1344,25 @@ def contingency_metrics(contingency: pd.DataFrame, selected_project: str) -> dic
     }
 
 
-def contingency_line_chart(contingency: pd.DataFrame, title: str) -> alt.Chart:
+def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequency: str = "Monthly") -> alt.Chart:
     df = contingency.copy()
     if df.empty:
         return alt.Chart(pd.DataFrame())
+
+    if chart_frequency == "Quarterly":
+        df = aggregate_last_by_quarter(df, "Report Date")
+        x_encoding = alt.X(
+            "PeriodLabel:N",
+            title=None,
+            sort=period_sort_list(df),
+            axis=alt.Axis(labelAngle=0, labelPadding=10),
+        )
+        x_label_encoding = alt.X("PeriodLabel:N", sort=period_sort_list(df))
+        period_tooltip = alt.Tooltip("PeriodLabel:N", title="Quarter")
+    else:
+        x_encoding = alt.X("yearmonth(Report Date):O", title=None, axis=month_axis(label_padding=10))
+        x_label_encoding = alt.X("yearmonth(Report Date):O")
+        period_tooltip = alt.Tooltip("Report Date:T", title="Month", format="%b/%y")
 
     df["Remaining Label"] = df["Remaining Contingency"].map(
         lambda value: "" if pd.isna(value) else f"{value / 1_000_000:.2f}MM"
@@ -1270,12 +1374,12 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str) -> alt.Chart:
         alt.Chart(df)
         .mark_line(point=True, strokeWidth=3)
         .encode(
-            x=alt.X("yearmonth(Report Date):O", title=None, axis=month_axis(label_padding=10)),
+            x=x_encoding,
             y=alt.Y("Remaining Contingency:Q", axis=mm_axis("US$")),
             color=alt.Color("Project:N", title="", scale=contingency_color_scale(projects)),
             tooltip=[
                 alt.Tooltip("Project:N"),
-                alt.Tooltip("Report Date:T", title="Month", format="%b/%y"),
+                period_tooltip,
                 alt.Tooltip("Remaining Contingency:Q", title="Remaining", format=",.0f"),
                 alt.Tooltip("Total Reallocated:Q", title="Total reallocated", format=",.0f"),
             ],
@@ -1286,7 +1390,7 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str) -> alt.Chart:
         alt.Chart(latest_labels)
         .mark_text(align="left", dx=8, dy=-8, fontSize=11, fontWeight="bold")
         .encode(
-            x=alt.X("yearmonth(Report Date):O"),
+            x=x_label_encoding,
             y=alt.Y("Remaining Contingency:Q"),
             color=alt.Color("Project:N", title="", scale=contingency_color_scale(projects)),
             text="Remaining Label:N",
@@ -1301,18 +1405,40 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str) -> alt.Chart:
     )
 
 
-def contingency_change_chart(contingency: pd.DataFrame, title: str) -> alt.Chart:
+def contingency_change_chart(contingency: pd.DataFrame, title: str, chart_frequency: str = "Monthly") -> alt.Chart:
     df = contingency.copy()
     if df.empty:
         return alt.Chart(pd.DataFrame())
     df["Project"] = df["Project"].astype(str)
     projects = sorted(df["Project"].dropna().unique())
     single_project = len(projects) <= 1
+
+    if chart_frequency == "Quarterly":
+        df = aggregate_sum_by_quarter(
+            df.drop(columns=["Direction"], errors="ignore"),
+            "Report Date",
+            "Monthly Contingency Change",
+        )
+        x_encoding = alt.X(
+            "PeriodLabel:N",
+            title=None,
+            sort=period_sort_list(df),
+            axis=alt.Axis(labelAngle=0, labelPadding=10),
+        )
+        x_label_encoding = alt.X("PeriodLabel:N", sort=period_sort_list(df))
+        period_tooltip = alt.Tooltip("PeriodLabel:N", title="Quarter")
+        total_group_cols = ["PeriodSort", "PeriodLabel"]
+    else:
+        x_encoding = alt.X("yearmonth(Report Date):O", title=None, axis=month_axis(label_padding=10))
+        x_label_encoding = alt.X("yearmonth(Report Date):O")
+        period_tooltip = alt.Tooltip("Report Date:T", title="Month", format="%b/%y")
+        total_group_cols = ["Report Date"]
+
     df["Direction"] = df["Monthly Contingency Change"].map(
         lambda value: "Increase" if pd.notna(value) and value >= 0 else "Decrease"
     )
     totals = (
-        df.groupby("Report Date", as_index=False)["Monthly Contingency Change"]
+        df.groupby(total_group_cols, as_index=False)["Monthly Contingency Change"]
         .sum(min_count=1)
         .dropna(subset=["Monthly Contingency Change"])
     )
@@ -1335,23 +1461,23 @@ def contingency_change_chart(contingency: pd.DataFrame, title: str) -> alt.Chart
     )
 
     encodings = {
-        "x": alt.X("yearmonth(Report Date):O", title=None, axis=month_axis(label_padding=10)),
+        "x": x_encoding,
         "y": alt.Y("Monthly Contingency Change:Q", axis=compact_usd_axis("US$")),
         "color": color_encoding,
         "order": alt.Order("Project:N"),
         "tooltip": [
             alt.Tooltip("Project:N"),
             alt.Tooltip("Direction:N"),
-            alt.Tooltip("Report Date:T", title="Month", format="%b/%y"),
+            period_tooltip,
             alt.Tooltip("Monthly Contingency Change:Q", title="Monthly change", format=",.0f"),
         ],
     }
     label_encodings = {
-        "x": alt.X("yearmonth(Report Date):O"),
+        "x": x_label_encoding,
         "y": alt.Y("Label Y:Q", axis=compact_usd_axis("US$")),
         "text": alt.Text("Change Label:N"),
         "tooltip": [
-            alt.Tooltip("Report Date:T", title="Month", format="%b/%y"),
+            period_tooltip,
             alt.Tooltip("Monthly Contingency Change:Q", title="Monthly total", format=",.0f"),
         ],
     }
@@ -1735,6 +1861,13 @@ timeline_basis = st.sidebar.radio(
     format_func=lambda value: tr("calendar_date") if value == "Calendar date" else tr("month_since_start"),
     help=tr("timeline_help"),
 )
+frequency_options = ["Monthly", "Quarterly"]
+chart_frequency = st.sidebar.radio(
+    tr("chart_frequency"),
+    frequency_options,
+    index=0,
+    format_func=lambda value: tr("monthly") if value == "Monthly" else tr("quarterly"),
+)
 if selected_project == "All projects":
     p, a = aggregate_portfolio(projected_df, actual_df)
     c = contingency_df.copy()
@@ -1885,6 +2018,7 @@ if not p.empty or not a.empty:
             tr("cumulative_hard_cost"),
             label_all_points=True,
             timeline_basis=timeline_basis,
+            chart_frequency=chart_frequency,
         )
         export_charts.append((tr("cumulative_hard_cost"), cumulative_chart))
         st.altair_chart(cumulative_chart, use_container_width=True)
@@ -1896,6 +2030,7 @@ if not p.empty or not a.empty:
                 detail,
                 tr("cumulative_hard_cost_by_project"),
                 timeline_basis=timeline_basis,
+                chart_frequency=chart_frequency,
             )
             export_charts.append((tr("cumulative_hard_cost_by_project"), project_chart))
             st.altair_chart(project_chart, use_container_width=True)
@@ -1927,13 +2062,10 @@ if not p.empty or not a.empty:
         )
     if monthly:
         monthly_df = pd.concat(monthly, ignore_index=True)
+        hard_cost_title = tr("quarterly_hard_cost") if chart_frequency == "Quarterly" else tr("monthly_hard_cost")
         if timeline_basis == "Month since start":
             monthly_df = add_aligned_display_date(monthly_df)
-            monthly_x = alt.X(
-                "yearmonth(Display Date):O",
-                title=None,
-                axis=month_axis(label_padding=10),
-            )
+            period_date_col = "Display Date"
             monthly_tooltip = [
                 alt.Tooltip("Date:T", title="Original month", format="%b/%y"),
                 alt.Tooltip("Display Date:T", title="Aligned month", format="%b/%y"),
@@ -1942,16 +2074,38 @@ if not p.empty or not a.empty:
                 alt.Tooltip("Value:Q", title="US$", format=",.0f"),
             ]
         else:
-            monthly_x = alt.X(
-                "yearmonth(Date):O",
-                title=None,
-                axis=month_axis(label_padding=10),
-            )
+            period_date_col = "Date"
             monthly_tooltip = [
                 alt.Tooltip("Date:T", title="Month", format="%b/%y"),
                 alt.Tooltip("Series:N"),
                 alt.Tooltip("Value:Q", title="US$", format=",.0f"),
             ]
+
+        if chart_frequency == "Quarterly":
+            monthly_df = aggregate_sum_by_quarter(monthly_df, period_date_col, "Value")
+            monthly_x = alt.X(
+                "PeriodLabel:N",
+                title=None,
+                sort=period_sort_list(monthly_df),
+                axis=alt.Axis(labelAngle=0, labelPadding=10),
+            )
+            monthly_tooltip = [
+                alt.Tooltip("PeriodLabel:N", title="Quarter"),
+                alt.Tooltip("Series:N"),
+                alt.Tooltip("Value:Q", title="US$", format=",.0f"),
+            ]
+        elif timeline_basis == "Month since start":
+            monthly_x = alt.X(
+                "yearmonth(Display Date):O",
+                title=None,
+                axis=month_axis(label_padding=10),
+            )
+        else:
+            monthly_x = alt.X(
+                "yearmonth(Date):O",
+                title=None,
+                axis=month_axis(label_padding=10),
+            )
 
         chart = (
             alt.Chart(monthly_df)
@@ -1970,12 +2124,12 @@ if not p.empty or not a.empty:
                 xOffset="Series:N",
                 tooltip=monthly_tooltip,
             )
-            .properties(height=320, title=tr("monthly_hard_cost"))
+            .properties(height=320, title=hard_cost_title)
             .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
             .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
             .configure_title(color=BRAND_EBONY, fontSize=15, anchor="start")
         )
-        export_charts.append((tr("monthly_hard_cost"), chart))
+        export_charts.append((hard_cost_title, chart))
         st.altair_chart(chart, use_container_width=True)
 
 st.markdown("<div style='height: 36px;'></div>", unsafe_allow_html=True)
@@ -2020,12 +2174,21 @@ else:
         line_title = tr("remaining_contingency_by_project")
     else:
         line_title = tr("remaining_contingency")
-    contingency_line = contingency_line_chart(chart_df, line_title)
+    contingency_line = contingency_line_chart(chart_df, line_title, chart_frequency=chart_frequency)
     export_charts.append((line_title, contingency_line))
     st.altair_chart(contingency_line, use_container_width=True)
 
-    contingency_change = contingency_change_chart(chart_df, tr("monthly_contingency_change"))
-    export_charts.append((tr("monthly_contingency_change"), contingency_change))
+    contingency_change_title = (
+        tr("quarterly_contingency_change")
+        if chart_frequency == "Quarterly"
+        else tr("monthly_contingency_change")
+    )
+    contingency_change = contingency_change_chart(
+        chart_df,
+        contingency_change_title,
+        chart_frequency=chart_frequency,
+    )
+    export_charts.append((contingency_change_title, contingency_change))
     st.altair_chart(contingency_change, use_container_width=True)
 
     latest_rows = latest_contingency_by_project(c) if selected_project == "All projects" else c.sort_values("Report Date")
@@ -2059,7 +2222,8 @@ else:
 
 if export_charts:
     report_scope = tr("all_projects") if selected_project == "All projects" else selected_project
-    report_subtitle = f"{report_scope} | {tr('timeline_basis')}: {tr('calendar_date') if timeline_basis == 'Calendar date' else tr('month_since_start')}"
+    frequency_label = tr("monthly") if chart_frequency == "Monthly" else tr("quarterly")
+    report_subtitle = f"{report_scope} | {tr('timeline_basis')}: {tr('calendar_date') if timeline_basis == 'Calendar date' else tr('month_since_start')} | {tr('chart_frequency')}: {frequency_label}"
     report_html = build_a4_report_html(
         tr("app_title"),
         report_subtitle,
