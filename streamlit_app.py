@@ -88,6 +88,9 @@ TRANSLATIONS = {
         "actual_start": "Actual Start",
         "start_variance": "Start Variance",
         "completion_variance": "Completion Variance",
+        "duration": "Construction Duration",
+        "forecast_duration": "Forecast Duration",
+        "duration_variance": "Duration Variance",
         "months": "Months",
         "cumulative_hard_cost": "Cumulative Hard Cost",
         "cumulative_hard_cost_by_project": "Cumulative Hard Cost by Project",
@@ -144,6 +147,9 @@ TRANSLATIONS = {
         "actual_start": "Início Realizado",
         "start_variance": "Desvio Início",
         "completion_variance": "Desvio Conclusão",
+        "duration": "Duração de Obra",
+        "forecast_duration": "Duração Forecast",
+        "duration_variance": "Desvio Duração",
         "months": "Meses",
         "cumulative_hard_cost": "Avanço de Obra Acumulado",
         "cumulative_hard_cost_by_project": "Avanço de Obra Acumulado por Projeto",
@@ -629,12 +635,26 @@ def signed_pct(value: float | int | None) -> str:
 
 
 def month_count(start, end) -> str:
-    if pd.isna(start) or pd.isna(end):
+    months = month_count_value(start, end)
+    if months is None:
         return "-"
+    return f"{months:.0f}m"
+
+
+def month_count_value(start, end) -> int | None:
+    if pd.isna(start) or pd.isna(end):
+        return None
     start = pd.to_datetime(start)
     end = pd.to_datetime(end)
-    months = (end.year - start.year) * 12 + (end.month - start.month) + 1
-    return f"{months:.0f}"
+    return (end.year - start.year) * 12 + (end.month - start.month) + 1
+
+
+def signed_month_count(value: int | None) -> str:
+    if value is None:
+        return "-"
+    if value == 0:
+        return "0m"
+    return f"{value:+.0f}m"
 
 
 def month_delta_label(start, end) -> str:
@@ -722,6 +742,9 @@ def metric_schedule_html(
     planned_completion: str,
     forecast_completion: str,
     completion_variance: str,
+    planned_duration: str,
+    forecast_duration: str,
+    duration_variance: str,
 ) -> str:
     return f"""
     <div class="metric-card">
@@ -752,6 +775,19 @@ def metric_schedule_html(
         <div>
           <div class="metric-label">{tr("completion_variance")}</div>
           <div class="metric-value metric-value-small">{completion_variance}</div>
+        </div>
+        <div class="schedule-row-title">{tr("duration")}</div>
+        <div>
+          <div class="metric-label">{tr("planned")}</div>
+          <div class="metric-value metric-value-small">{planned_duration}</div>
+        </div>
+        <div>
+          <div class="metric-label">{tr("forecast_duration")}</div>
+          <div class="metric-value metric-value-small">{forecast_duration}</div>
+        </div>
+        <div>
+          <div class="metric-label">{tr("duration_variance")}</div>
+          <div class="metric-value metric-value-small">{duration_variance}</div>
         </div>
       </div>
     </div>
@@ -1734,6 +1770,15 @@ if pd.isna(forecast_completion_date):
     forecast_completion_date = projected_completion_date
 start_delta = month_delta_label(projected_start, actual_start)
 completion_delta_months = month_delta_label(projected_completion_date, forecast_completion_date)
+planned_duration_months = month_count(projected_start, projected_completion_date)
+forecast_duration_months = month_count(actual_start, forecast_completion_date)
+planned_duration_value = month_count_value(projected_start, projected_completion_date)
+forecast_duration_value = month_count_value(actual_start, forecast_completion_date)
+duration_delta_months = signed_month_count(
+    forecast_duration_value - planned_duration_value
+    if planned_duration_value is not None and forecast_duration_value is not None
+    else None
+)
 
 actual_completion = latest_actual_row["Cumulative Completion %"] if latest_actual_row is not None else None
 projected_completion = (
@@ -1788,6 +1833,9 @@ timeline_card_html = metric_schedule_html(
     date_label(projected_completion_date),
     date_label(forecast_completion_date),
     completion_delta_months,
+    planned_duration_months,
+    forecast_duration_months,
+    duration_delta_months,
 )
 summary_cards_html = cost_card_html + completion_card_html + timeline_card_html
 
