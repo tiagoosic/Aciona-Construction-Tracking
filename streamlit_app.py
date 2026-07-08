@@ -135,9 +135,9 @@ TRANSLATIONS = {
         "start": "Início",
         "projected_completion": "Conclusão Projetada",
         "months": "Meses",
-        "cumulative_hard_cost": "Hard Cost Acumulado",
-        "cumulative_hard_cost_by_project": "Hard Cost Acumulado por Projeto",
-        "monthly_hard_cost": "Hard Cost Mensal",
+        "cumulative_hard_cost": "Avanço de Obra Acumulado",
+        "cumulative_hard_cost_by_project": "Avanço de Obra Acumulado por Projeto",
+        "monthly_hard_cost": "Desembolso de Obra Mensal",
         "contingency": "Contingência",
         "no_contingency": "Não há linhas de contingência para esta seleção.",
         "contingency_reserve": "Reserva de Contingência",
@@ -166,6 +166,28 @@ TRANSLATIONS = {
 def tr(key: str) -> str:
     language = st.session_state.get("language", "pt")
     return TRANSLATIONS.get(language, TRANSLATIONS["pt"]).get(key, key)
+
+
+def series_label(series_type: str) -> str:
+    if series_type == "Actual":
+        return tr("actual")
+    if series_type == "Projected":
+        return tr("projected")
+    return series_type
+
+
+def month_axis(label_padding: int = 12, label_angle: int | None = None) -> alt.Axis:
+    if st.session_state.get("language", "pt") == "pt":
+        angle = -35 if label_angle is None else label_angle
+        return alt.Axis(
+            labelExpr=(
+                "['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto',"
+                "'Setembro','Outubro','Novembro','Dezembro'][month(datum.value)]"
+            ),
+            labelAngle=angle,
+            labelPadding=label_padding,
+        )
+    return alt.Axis(format="%b/%y", labelAngle=0 if label_angle is None else label_angle, labelPadding=label_padding)
 
 
 st.set_page_config(
@@ -687,7 +709,7 @@ def project_color_map(projects: list[str]) -> tuple[list[str], list[str]]:
     colors: list[str] = []
     for index, project in enumerate(projects):
         actual_color, projected_color = PROJECT_COLOR_PAIRS[index % len(PROJECT_COLOR_PAIRS)]
-        domain.extend([f"{project} - Actual", f"{project} - Projected"])
+        domain.extend([f"{project} - {tr('actual')}", f"{project} - {tr('projected')}"])
         colors.extend([actual_color, projected_color])
     return domain, colors
 
@@ -708,7 +730,7 @@ def line_chart(df: pd.DataFrame, y_field: str, title: str, y_title: str) -> alt.
                 "Series:N",
                 title="",
                 scale=alt.Scale(
-                    domain=["Actual", "Projected"],
+                    domain=[tr("actual"), tr("projected")],
                     range=[BRAND_EBONY, BRAND_GOLD],
                 ),
             ),
@@ -749,7 +771,8 @@ def add_aligned_display_date(df: pd.DataFrame) -> pd.DataFrame:
     out = add_elapsed_month(df)
     out["Date"] = parse_date(out["Date"])
 
-    actual_start = out.loc[out["Series"].astype(str).str.contains("Actual"), "Date"].min()
+    actual_mask = out["Series"].astype(str).str.contains("Actual|Realizado", regex=True)
+    actual_start = out.loc[actual_mask, "Date"].min()
     if pd.isna(actual_start):
         actual_start = out["Date"].min()
 
@@ -778,7 +801,7 @@ def cumulative_cost_chart(
         x_encoding = alt.X(
             "yearmonth(Display Date):O",
             title=None,
-            axis=alt.Axis(format="%b/%y", labelAngle=0, labelPadding=12),
+            axis=month_axis(label_padding=12),
         )
         tooltip.insert(1, alt.Tooltip("Month No:Q", title="Month #", format=".0f"))
         tooltip.insert(2, alt.Tooltip("Display Date:T", title="Aligned month", format="%b/%y"))
@@ -786,7 +809,7 @@ def cumulative_cost_chart(
         x_encoding = alt.X(
             "yearmonth(Date):O",
             title=None,
-            axis=alt.Axis(format="%b/%y", labelAngle=0, labelPadding=12),
+            axis=month_axis(label_padding=12),
         )
 
     if "ColorSeries" in df.columns:
@@ -796,11 +819,11 @@ def cumulative_cost_chart(
         detail_encoding = ["Series:N"]
     elif "Type" in df.columns:
         color_field = "Type:N"
-        color_domain, color_range = ["Actual", "Projected"], [BRAND_EBONY, BRAND_GOLD]
+        color_domain, color_range = [tr("actual"), tr("projected")], [BRAND_EBONY, BRAND_GOLD]
         detail_encoding = ["Series:N"]
     else:
         color_field = "Series:N"
-        color_domain, color_range = ["Actual", "Projected"], [BRAND_EBONY, BRAND_GOLD]
+        color_domain, color_range = [tr("actual"), tr("projected")], [BRAND_EBONY, BRAND_GOLD]
         detail_encoding = []
 
     base = alt.Chart(df).encode(
@@ -968,7 +991,7 @@ def project_cumulative_detail(projected: pd.DataFrame, actual: pd.DataFrame) -> 
                     "Curve Month No": "MonthNo",
                 }
             )
-            .assign(Type="Projected")
+            .assign(Type=tr("projected"))
             [["Date", "Project", "Type", "Value", "CompletionPct", "MonthNo"]]
         )
     if not actual.empty:
@@ -981,7 +1004,7 @@ def project_cumulative_detail(projected: pd.DataFrame, actual: pd.DataFrame) -> 
                     "Actual Month No": "MonthNo",
                 }
             )
-            .assign(Type="Actual")
+            .assign(Type=tr("actual"))
             [["Date", "Project", "Type", "Value", "CompletionPct", "MonthNo"]]
         )
     if not frames:
@@ -1142,7 +1165,7 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str) -> alt.Chart:
         alt.Chart(df)
         .mark_line(point=True, strokeWidth=3)
         .encode(
-            x=alt.X("yearmonth(Report Date):O", title=None, axis=alt.Axis(format="%b/%y", labelAngle=0)),
+            x=alt.X("yearmonth(Report Date):O", title=None, axis=month_axis(label_padding=10)),
             y=alt.Y("Remaining Contingency:Q", axis=mm_axis("US$")),
             color=alt.Color("Project:N", title="", scale=contingency_color_scale(projects)),
             tooltip=[
@@ -1207,7 +1230,7 @@ def contingency_change_chart(contingency: pd.DataFrame, title: str) -> alt.Chart
     )
 
     encodings = {
-        "x": alt.X("yearmonth(Report Date):O", title=None, axis=alt.Axis(format="%b/%y", labelAngle=0)),
+        "x": alt.X("yearmonth(Report Date):O", title=None, axis=month_axis(label_padding=10)),
         "y": alt.Y("Monthly Contingency Change:Q", axis=compact_usd_axis("US$")),
         "color": color_encoding,
         "order": alt.Order("Project:N"),
@@ -1677,7 +1700,7 @@ if not p.empty or not a.empty:
                     "Curve Month No": "MonthNo",
                 }
             )
-            .assign(Series="Projected")
+            .assign(Series=tr("projected"))
             [["Date", "Series", "Value", "CompletionPct", "MonthNo"]]
         )
     if not a.empty:
@@ -1690,7 +1713,7 @@ if not p.empty or not a.empty:
                     "Actual Month No": "MonthNo",
                 }
             )
-            .assign(Series="Actual")
+            .assign(Series=tr("actual"))
             [["Date", "Series", "Value", "CompletionPct", "MonthNo"]]
         )
     if cumulative:
@@ -1724,7 +1747,7 @@ if not p.empty or not a.empty:
                     "Curve Month No": "MonthNo",
                 }
             )
-            .assign(Series="Projected")
+            .assign(Series=tr("projected"))
             [["Date", "Series", "Value", "MonthNo"]]
         )
     if not a.empty:
@@ -1736,7 +1759,7 @@ if not p.empty or not a.empty:
                     "Actual Month No": "MonthNo",
                 }
             )
-            .assign(Series="Actual")
+            .assign(Series=tr("actual"))
             [["Date", "Series", "Value", "MonthNo"]]
         )
     if monthly:
@@ -1746,7 +1769,7 @@ if not p.empty or not a.empty:
             monthly_x = alt.X(
                 "yearmonth(Display Date):O",
                 title=None,
-                axis=alt.Axis(format="%b/%y"),
+                axis=month_axis(label_padding=10),
             )
             monthly_tooltip = [
                 alt.Tooltip("Date:T", title="Original month", format="%b/%y"),
@@ -1759,7 +1782,7 @@ if not p.empty or not a.empty:
             monthly_x = alt.X(
                 "yearmonth(Date):O",
                 title=None,
-                axis=alt.Axis(format="%b/%y"),
+                axis=month_axis(label_padding=10),
             )
             monthly_tooltip = [
                 alt.Tooltip("Date:T", title="Month", format="%b/%y"),
@@ -1777,7 +1800,7 @@ if not p.empty or not a.empty:
                     "Series:N",
                     title="",
                     scale=alt.Scale(
-                        domain=["Actual", "Projected"],
+                        domain=[tr("actual"), tr("projected")],
                         range=[BRAND_EBONY, BRAND_GOLD],
                     ),
                 ),
