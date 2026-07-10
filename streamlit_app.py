@@ -39,7 +39,7 @@ BRAND_TERRA = "#82613F"
 BRAND_TERRA_SOFT = "#B79A78"
 BRAND_PROJECTED_GRAY = "#9CA3AF"
 BRAND_GRID = "#E5DCCB"
-BRAND_BG = "#FBF8F1"
+BRAND_BG = "#FFFFFF"
 CONTINGENCY_MULTI_PALETTE = [
     "#5B8FD9",
     "#58B982",
@@ -814,12 +814,19 @@ def metric_schedule_html(
 
 
 def mm_axis(title: str = "US$") -> alt.Axis:
-    return alt.Axis(title=title, labelExpr="datum.value == 0 ? '0' : format(datum.value / 1000000, '.0f') + 'MM'")
+    return alt.Axis(
+        title=title,
+        titlePadding=28,
+        labelPadding=8,
+        labelExpr="datum.value == 0 ? '0' : format(datum.value / 1000000, '.0f') + 'MM'",
+    )
 
 
 def compact_usd_axis(title: str = "US$") -> alt.Axis:
     return alt.Axis(
         title=title,
+        titlePadding=28,
+        labelPadding=8,
         labelExpr=(
             "datum.value == 0 ? '0' : "
             "abs(datum.value) >= 1000000 ? format(datum.value / 1000000, '.1f') + 'MM' : "
@@ -864,9 +871,10 @@ def line_chart(df: pd.DataFrame, y_field: str, title: str, y_title: str) -> alt.
                 alt.Tooltip(f"{y_field}:Q", title=y_title, format=",.2f"),
             ],
         )
-        .properties(height=320, title=title)
+        .properties(height=320, title=title, padding={"left": 55, "bottom": 25, "right": 35})
         .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
         .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
+        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
     )
 
 
@@ -1093,12 +1101,12 @@ def cumulative_cost_chart(
         (line + label_halo + label_text)
         .properties(
             height=380,
-            padding={"bottom": 35, "right": 35},
+            padding={"left": 55, "bottom": 35, "right": 35},
             title=title,
         )
         .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
         .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="start")
+        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
     )
 
 
@@ -1398,10 +1406,10 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
     )
     return (
         (line + zero + labels)
-        .properties(height=320, title=title, padding={"bottom": 25, "right": 45})
+        .properties(height=320, title=title, padding={"left": 55, "bottom": 25, "right": 45})
         .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
         .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="start")
+        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
     )
 
 
@@ -1496,11 +1504,11 @@ def contingency_change_chart(contingency: pd.DataFrame, title: str, chart_freque
 
     return (
         (zero + bars + labels)
-        .properties(height=300, title=title, padding={"top": 15, "bottom": 25})
+        .properties(height=300, title=title, padding={"left": 55, "top": 15, "bottom": 25})
         .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
         .configure_header(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
         .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="start")
+        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
     )
 
 
@@ -1703,20 +1711,20 @@ st.markdown(
     """
     <style>
     .stApp {
-        background: #FBF8F1;
+        background: #FFFFFF;
         color: #3D3533;
     }
     [data-testid="stHeader"] {
-        background: #FBF8F1;
+        background: #FFFFFF;
     }
     [data-testid="stToolbar"] {
-        background: #FBF8F1;
+        background: #FFFFFF;
     }
     .block-container {
         padding-top: 2.2rem;
     }
     [data-testid="stSidebar"] {
-        background: #F1E8D5;
+        background: #FFFFFF;
         border-right: 1px solid #E1D4BC;
     }
     .sidebar-logo-footer {
@@ -1739,7 +1747,7 @@ st.markdown(
         border: 1px solid #E1D4BC;
         border-radius: 8px;
         padding: 16px 18px;
-        background: #FFFDF8;
+        background: #FFFFFF;
         min-height: 118px;
         box-shadow: 0 1px 8px rgba(61, 53, 51, 0.05);
     }
@@ -2124,10 +2132,10 @@ if not p.empty or not a.empty:
                 xOffset="Series:N",
                 tooltip=monthly_tooltip,
             )
-            .properties(height=320, title=hard_cost_title)
+            .properties(height=320, title=hard_cost_title, padding={"left": 55, "bottom": 25, "right": 35})
             .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
             .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-            .configure_title(color=BRAND_EBONY, fontSize=15, anchor="start")
+            .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
         )
         export_charts.append((hard_cost_title, chart))
         st.altair_chart(chart, use_container_width=True)
@@ -2218,26 +2226,6 @@ else:
         ),
         use_container_width=True,
         hide_index=True,
-    )
-
-if export_charts:
-    report_scope = tr("all_projects") if selected_project == "All projects" else selected_project
-    frequency_label = tr("monthly") if chart_frequency == "Monthly" else tr("quarterly")
-    report_subtitle = f"{report_scope} | {tr('timeline_basis')}: {tr('calendar_date') if timeline_basis == 'Calendar date' else tr('month_since_start')} | {tr('chart_frequency')}: {frequency_label}"
-    report_html = build_a4_report_html(
-        tr("app_title"),
-        report_subtitle,
-        summary_cards_html,
-        export_charts,
-    )
-    st.sidebar.markdown(f"### {tr('export_title')}")
-    st.sidebar.caption(tr("export_help"))
-    st.sidebar.download_button(
-        tr("download_a4_html"),
-        data=report_html.encode("utf-8"),
-        file_name=tr("export_filename"),
-        mime="text/html",
-        use_container_width=True,
     )
 
 if logo_uri:
