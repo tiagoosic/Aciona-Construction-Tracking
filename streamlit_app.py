@@ -76,6 +76,13 @@ TRANSLATIONS = {
         "chart_frequency": "Chart frequency",
         "monthly": "Monthly",
         "quarterly": "Quarterly",
+        "curve_labels": "Curve labels",
+        "quarter_end_labels": "Quarter ends",
+        "all_labels": "All labels",
+        "latest_label": "Latest only",
+        "reference_month": "Reference month",
+        "cost_and_completion": "Cost & Completion",
+        "reference": "Reference",
         "no_projected": "No projected curve found for this project.",
         "no_actual": "No actual tracking found for this project yet.",
         "cost": "Cost",
@@ -140,6 +147,13 @@ TRANSLATIONS = {
         "chart_frequency": "Frequência dos gráficos",
         "monthly": "Mensal",
         "quarterly": "Trimestral",
+        "curve_labels": "Rótulos da curva",
+        "quarter_end_labels": "Fechamentos trimestrais",
+        "all_labels": "Todos os rótulos",
+        "latest_label": "Apenas último ponto",
+        "reference_month": "Mês de referência",
+        "cost_and_completion": "Custo e Avanço",
+        "reference": "Referência",
         "no_projected": "Não há curva projetada para este projeto.",
         "no_actual": "Ainda não há acompanhamento realizado para este projeto.",
         "cost": "Custo",
@@ -753,6 +767,43 @@ def metric_trio_html(
     """
 
 
+def metric_progress_html(
+    title: str,
+    reference_label: str,
+    actual_cost: str,
+    actual_completion: str,
+    projected_cost: str,
+    projected_completion: str,
+    variance_cost: str,
+    variance_completion: str,
+) -> str:
+    return f"""
+    <div class="metric-card">
+      <div class="metric-title-row">
+        <div class="metric-title">{title}</div>
+        <div class="metric-reference">{tr("reference")}: {reference_label}</div>
+      </div>
+      <div class="metric-grid metric-grid-3">
+        <div>
+          <div class="metric-label">{tr("actual")}</div>
+          <div class="metric-value">{actual_cost}</div>
+          <div class="metric-subvalue">{actual_completion}</div>
+        </div>
+        <div>
+          <div class="metric-label">{tr("projected")}</div>
+          <div class="metric-value">{projected_cost}</div>
+          <div class="metric-subvalue">{projected_completion}</div>
+        </div>
+        <div>
+          <div class="metric-label">{tr("variance")}</div>
+          <div class="metric-value">{variance_cost}</div>
+          <div class="metric-subvalue">{variance_completion}</div>
+        </div>
+      </div>
+    </div>
+    """
+
+
 def metric_schedule_html(
     title: str,
     planned_start: str,
@@ -976,6 +1027,7 @@ def cumulative_cost_chart(
     label_all_points: bool = False,
     timeline_basis: str = "Calendar date",
     chart_frequency: str = "Monthly",
+    label_mode: str = "Quarter ends",
 ) -> alt.Chart:
     df = df.copy()
     tooltip = [
@@ -1044,21 +1096,25 @@ def cumulative_cost_chart(
     )
     line = base.mark_line(point=True, strokeWidth=3)
 
-    all_labels_df = df.dropna(subset=["Value"]).sort_values(["Series", "Date"]).copy()
+    label_date_col = "PeriodSort" if chart_frequency == "Quarterly" else period_date_col
+    all_labels_df = df.dropna(subset=["Value"]).sort_values(["Series", label_date_col]).copy()
     latest_labels_df = all_labels_df.groupby("Series", as_index=False).tail(1).copy()
     labels_df = all_labels_df.copy()
-    if not label_all_points:
+    if label_mode == "Latest only" or not label_all_points:
         labels_df = latest_labels_df
-    elif "Month No" in labels_df:
-        spaced_labels_df = labels_df[
-            (labels_df["Month No"] == 1)
-            | (labels_df["Month No"] % 3 == 0)
-            | (labels_df["CompletionPct"] >= 99.5)
-        ].copy()
+    elif label_mode == "Quarter ends":
+        if chart_frequency == "Quarterly":
+            spaced_labels_df = all_labels_df.copy()
+        else:
+            label_dates = parse_date(labels_df[period_date_col])
+            spaced_labels_df = labels_df[
+                label_dates.dt.month.isin([3, 6, 9, 12])
+                | (labels_df["CompletionPct"] >= 99.5)
+            ].copy()
         labels_df = (
             pd.concat([spaced_labels_df, latest_labels_df], ignore_index=True)
             .drop_duplicates(subset=["Series", "Date", "Value"], keep="last")
-            .sort_values(["Series", "Date"])
+            .sort_values(["Series", label_date_col])
         )
     labels_df["Completion Label"] = labels_df["CompletionPct"].map(
         lambda value: "" if pd.isna(value) else f"{value:.1f}%"
@@ -1724,7 +1780,7 @@ st.markdown(
         padding-top: 2.2rem;
     }
     [data-testid="stSidebar"] {
-        background: #FFFFFF;
+        background: #F1E8D5;
         border-right: 1px solid #E1D4BC;
     }
     .sidebar-logo-footer {
@@ -1759,6 +1815,21 @@ st.markdown(
         letter-spacing: 0.03em;
         margin-bottom: 14px;
     }
+    .metric-title-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 16px;
+        margin-bottom: 14px;
+    }
+    .metric-title-row .metric-title {
+        margin-bottom: 0;
+    }
+    .metric-reference {
+        color: #82613F;
+        font-size: 0.78rem;
+        white-space: nowrap;
+    }
     .metric-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -1779,6 +1850,13 @@ st.markdown(
         font-size: 1.45rem;
         line-height: 1.1;
         font-weight: 500;
+        white-space: nowrap;
+    }
+    .metric-subvalue {
+        color: #82613F;
+        font-size: 1rem;
+        font-weight: 600;
+        margin-top: 7px;
         white-space: nowrap;
     }
     .metric-value-small {
@@ -1876,6 +1954,17 @@ chart_frequency = st.sidebar.radio(
     index=0,
     format_func=lambda value: tr("monthly") if value == "Monthly" else tr("quarterly"),
 )
+label_options = ["Quarter ends", "All labels", "Latest only"]
+curve_label_mode = st.sidebar.radio(
+    tr("curve_labels"),
+    label_options,
+    index=0,
+    format_func=lambda value: {
+        "Quarter ends": tr("quarter_end_labels"),
+        "All labels": tr("all_labels"),
+        "Latest only": tr("latest_label"),
+    }[value],
+)
 if selected_project == "All projects":
     p, a = aggregate_portfolio(projected_df, actual_df)
     c = contingency_df.copy()
@@ -1889,7 +1978,30 @@ if p.empty:
 if a.empty:
     st.warning(tr("no_actual"))
 
+reference_label = "-"
 latest_actual = a.sort_values("Report Month").tail(1)
+if not a.empty and "Report Month" in a:
+    reference_months = (
+        a.dropna(subset=["Report Month"])
+        .assign(ReferencePeriod=lambda df: df["Report Month"].dt.to_period("M"))
+        .drop_duplicates(subset=["ReferencePeriod"])
+        .sort_values("Report Month")
+    )
+    if not reference_months.empty:
+        reference_periods = reference_months["ReferencePeriod"].tolist()
+        reference_labels = [date_label(period.to_timestamp("M")) for period in reference_periods]
+        selected_reference_label = st.sidebar.selectbox(
+            tr("reference_month"),
+            reference_labels,
+            index=len(reference_labels) - 1,
+        )
+        selected_reference_period = reference_periods[reference_labels.index(selected_reference_label)]
+        reference_label = selected_reference_label
+        latest_actual = (
+            a[a["Report Month"].dt.to_period("M") == selected_reference_period]
+            .sort_values("Report Month")
+            .tail(1)
+        )
 latest_projected = p.sort_values("Month").tail(1)
 
 latest_actual_row = latest_actual.iloc[0] if not latest_actual.empty else None
@@ -1948,22 +2060,14 @@ completion_delta = (
     else None
 )
 
-cost_card_html = metric_trio_html(
-    tr("cost"),
-    tr("actual"),
+progress_card_html = metric_progress_html(
+    tr("cost_and_completion"),
+    reference_label,
     money_mm(actual_cumulative_hard_cost),
-    tr("projected"),
-    money_mm(projected_cumulative_hard_cost),
-    tr("variance"),
-    signed_money_mm(cost_delta),
-)
-completion_card_html = metric_trio_html(
-    tr("completion"),
-    tr("actual"),
     pct(actual_completion),
-    tr("projected"),
+    money_mm(projected_cumulative_hard_cost),
     pct(projected_completion),
-    tr("variance"),
+    signed_money_mm(cost_delta),
     signed_pct(completion_delta),
 )
 timeline_card_html = metric_schedule_html(
@@ -1978,14 +2082,12 @@ timeline_card_html = metric_schedule_html(
     forecast_duration_months,
     duration_delta_months,
 )
-summary_cards_html = cost_card_html + completion_card_html + timeline_card_html
+summary_cards_html = progress_card_html + timeline_card_html
 
-card1, card2, card3 = st.columns(3)
+card1, card2 = st.columns([2, 1])
 with card1:
-    st.markdown(cost_card_html, unsafe_allow_html=True)
+    st.markdown(progress_card_html, unsafe_allow_html=True)
 with card2:
-    st.markdown(completion_card_html, unsafe_allow_html=True)
-with card3:
     st.markdown(timeline_card_html, unsafe_allow_html=True)
 
 st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
@@ -2027,6 +2129,7 @@ if not p.empty or not a.empty:
             label_all_points=True,
             timeline_basis=timeline_basis,
             chart_frequency=chart_frequency,
+            label_mode=curve_label_mode,
         )
         export_charts.append((tr("cumulative_hard_cost"), cumulative_chart))
         st.altair_chart(cumulative_chart, use_container_width=True)
@@ -2037,8 +2140,10 @@ if not p.empty or not a.empty:
             project_chart = cumulative_cost_chart(
                 detail,
                 tr("cumulative_hard_cost_by_project"),
+                label_all_points=True,
                 timeline_basis=timeline_basis,
                 chart_frequency=chart_frequency,
+                label_mode=curve_label_mode,
             )
             export_charts.append((tr("cumulative_hard_cost_by_project"), project_chart))
             st.altair_chart(project_chart, use_container_width=True)
