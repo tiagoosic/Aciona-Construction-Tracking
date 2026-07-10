@@ -82,6 +82,7 @@ TRANSLATIONS = {
         "latest_label": "Latest only",
         "reference_month": "Reference month",
         "cost_and_completion": "Cost & Completion",
+        "construction_cost": "Construction Cost",
         "reference": "Reference",
         "no_projected": "No projected curve found for this project.",
         "no_actual": "No actual tracking found for this project yet.",
@@ -153,6 +154,7 @@ TRANSLATIONS = {
         "latest_label": "Apenas último ponto",
         "reference_month": "Mês de referência",
         "cost_and_completion": "Custo e Avanço",
+        "construction_cost": "Custo de Obra",
         "reference": "Referência",
         "no_projected": "Não há curva projetada para este projeto.",
         "no_actual": "Ainda não há acompanhamento realizado para este projeto.",
@@ -770,10 +772,10 @@ def metric_trio_html(
 def metric_progress_html(
     title: str,
     reference_label: str,
-    actual_cost: str,
-    actual_completion: str,
     projected_cost: str,
     projected_completion: str,
+    actual_cost: str,
+    actual_completion: str,
     variance_cost: str,
     variance_completion: str,
 ) -> str:
@@ -785,14 +787,14 @@ def metric_progress_html(
       </div>
       <div class="metric-grid metric-grid-3">
         <div>
-          <div class="metric-label">{tr("actual")}</div>
-          <div class="metric-value">{actual_cost}</div>
-          <div class="metric-subvalue">{actual_completion}</div>
-        </div>
-        <div>
           <div class="metric-label">{tr("projected")}</div>
           <div class="metric-value">{projected_cost}</div>
           <div class="metric-subvalue">{projected_completion}</div>
+        </div>
+        <div>
+          <div class="metric-label">{tr("actual")}</div>
+          <div class="metric-value">{actual_cost}</div>
+          <div class="metric-subvalue">{actual_completion}</div>
         </div>
         <div>
           <div class="metric-label">{tr("variance")}</div>
@@ -1802,18 +1804,18 @@ st.markdown(
     .metric-card {
         border: 1px solid #E1D4BC;
         border-radius: 8px;
-        padding: 16px 18px;
+        padding: 14px 18px;
         background: #FFFFFF;
-        min-height: 118px;
+        min-height: 132px;
         box-shadow: 0 1px 8px rgba(61, 53, 51, 0.05);
     }
     .metric-title {
         color: #82613F;
-        font-size: 0.82rem;
+        font-size: 0.78rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.03em;
-        margin-bottom: 14px;
+        margin-bottom: 12px;
     }
     .metric-title-row {
         display: flex;
@@ -1827,7 +1829,7 @@ st.markdown(
     }
     .metric-reference {
         color: #82613F;
-        font-size: 0.78rem;
+        font-size: 0.74rem;
         white-space: nowrap;
     }
     .metric-grid {
@@ -1837,44 +1839,47 @@ st.markdown(
     }
     .metric-grid-3 {
         grid-template-columns: 1fr 1fr 1fr;
-        gap: 14px;
+        gap: 12px;
+        text-align: center;
     }
     .metric-label {
         color: #82613F;
-        font-size: 0.78rem;
+        font-size: 0.74rem;
         margin-bottom: 5px;
         white-space: nowrap;
     }
     .metric-value {
         color: #3D3533;
-        font-size: 1.45rem;
+        font-size: 1.22rem;
         line-height: 1.1;
         font-weight: 500;
         white-space: nowrap;
     }
     .metric-subvalue {
         color: #82613F;
-        font-size: 1rem;
+        font-size: 0.9rem;
         font-weight: 600;
-        margin-top: 7px;
+        margin-top: 6px;
         white-space: nowrap;
     }
     .metric-value-small {
-        font-size: 1.05rem;
+        font-size: 0.98rem;
     }
     .schedule-grid {
         display: grid;
         grid-template-columns: 0.8fr 1fr 1fr 0.9fr;
-        gap: 10px 14px;
+        gap: 8px 12px;
         align-items: end;
+        text-align: center;
     }
     .schedule-row-title {
         color: #82613F;
-        font-size: 0.78rem;
+        font-size: 0.72rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.02em;
         padding-bottom: 3px;
+        text-align: left;
     }
     </style>
     """,
@@ -2061,12 +2066,12 @@ completion_delta = (
 )
 
 progress_card_html = metric_progress_html(
-    tr("cost_and_completion"),
+    tr("construction_cost"),
     reference_label,
-    money_mm(actual_cumulative_hard_cost),
-    pct(actual_completion),
     money_mm(projected_cumulative_hard_cost),
     pct(projected_completion),
+    money_mm(actual_cumulative_hard_cost),
+    pct(actual_completion),
     signed_money_mm(cost_delta),
     signed_pct(completion_delta),
 )
@@ -2084,7 +2089,7 @@ timeline_card_html = metric_schedule_html(
 )
 summary_cards_html = progress_card_html + timeline_card_html
 
-card1, card2 = st.columns([2, 1])
+card1, card2 = st.columns(2)
 with card1:
     st.markdown(progress_card_html, unsafe_allow_html=True)
 with card2:
@@ -2252,8 +2257,8 @@ if c.empty:
     st.info(tr("no_contingency"))
 else:
     contingency_summary = contingency_metrics(c, selected_project)
-    cont_col1, cont_col2 = st.columns(2)
-    with cont_col1:
+    _, cont_col, _ = st.columns([0.22, 0.56, 0.22])
+    with cont_col:
         st.markdown(
             metric_trio_html(
                 tr("contingency_reserve"),
@@ -2266,7 +2271,7 @@ else:
             ),
             unsafe_allow_html=True,
         )
-    with cont_col2:
+        st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
         st.markdown(
             metric_trio_html(
                 tr("contingency_movement"),
@@ -2274,7 +2279,7 @@ else:
                 signed_money(contingency_summary["reallocated"]),
                 tr("drawn"),
                 money(contingency_summary["drawn"]),
-                tr("latest_report"),
+                tr("reference"),
                 date_label(contingency_summary["latest_date"]),
             ),
             unsafe_allow_html=True,
