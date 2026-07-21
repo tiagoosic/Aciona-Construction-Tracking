@@ -555,11 +555,17 @@ def apply_contingency_semantics(contingency: pd.DataFrame) -> pd.DataFrame:
     out["Contract Contingency"] = pd.NA
     out["Buyout Savings"] = pd.NA
     out["Net Savings"] = pd.NA
+    out["Show Contingency Trend"] = True
 
     helms = out["Project"].astype(str).str.contains("Helms", case=False, na=False)
+    isd = out["Project"].astype(str).str.contains("ISD", case=False, na=False)
+    ips = out["Project"].astype(str).str.contains("IPP|IPS|Prairie", case=False, na=False)
     report_period = out["Report Date"].dt.to_period("M")
 
+    out.loc[helms, "Show Contingency Trend"] = False
+
     helms_jun_2026 = helms & (report_period == pd.Period("2026-06"))
+    out.loc[helms_jun_2026, "Show Contingency Trend"] = True
     out.loc[helms_jun_2026, "Committed / Projected Contingency"] = 863_455.15
     out.loc[helms_jun_2026, "Effective Contingency Used"] = 188_037.28
     out.loc[helms_jun_2026, "Total Reallocated"] = -52_898.12
@@ -569,6 +575,7 @@ def apply_contingency_semantics(contingency: pd.DataFrame) -> pd.DataFrame:
     out.loc[helms_jun_2026, "Net Savings"] = 807_863.98
 
     helms_mar_2026 = helms & (report_period == pd.Period("2026-03"))
+    out.loc[helms_mar_2026, "Show Contingency Trend"] = True
     out.loc[helms_mar_2026, "Committed / Projected Contingency"] = 1_228_789.46
     out.loc[helms_mar_2026, "Effective Contingency Used"] = 0
     out.loc[helms_mar_2026, "Total Reallocated"] = 0
@@ -576,6 +583,29 @@ def apply_contingency_semantics(contingency: pd.DataFrame) -> pd.DataFrame:
     out.loc[helms_mar_2026, "Contract Contingency"] = 51_342.00
     out.loc[helms_mar_2026, "Buyout Savings"] = 781_555.00
     out.loc[helms_mar_2026, "Net Savings"] = 832_897.00
+
+    isd_mar_or_later = isd & (report_period >= pd.Period("2026-03"))
+    out.loc[isd_mar_or_later, "Original Contingency"] = 6_000_000.00
+    out.loc[isd_mar_or_later, "Remaining Contingency"] = 4_794_058.32
+    out.loc[isd_mar_or_later, "Committed / Projected Contingency"] = 1_205_941.68
+    out.loc[isd_mar_or_later, "Effective Contingency Used"] = 0
+    out.loc[isd_mar_or_later, "Total Reallocated"] = -1_205_941.68
+
+    ips_mar_2026 = ips & (report_period == pd.Period("2026-03"))
+    out.loc[ips_mar_2026, "Original Contingency"] = 3_554_106.00
+    out.loc[ips_mar_2026, "Remaining Contingency"] = 3_161_311.93
+    out.loc[ips_mar_2026, "Committed / Projected Contingency"] = 392_794.07
+    out.loc[ips_mar_2026, "Effective Contingency Used"] = 0
+    out.loc[ips_mar_2026, "Total Reallocated"] = -392_794.07
+    out.loc[ips_mar_2026, "Buyout Savings"] = 436_973.00
+
+    ips_jun_2026 = ips & (report_period == pd.Period("2026-06"))
+    out.loc[ips_jun_2026, "Original Contingency"] = 3_554_106.00
+    out.loc[ips_jun_2026, "Remaining Contingency"] = 3_141_329.62
+    out.loc[ips_jun_2026, "Committed / Projected Contingency"] = 412_776.38
+    out.loc[ips_jun_2026, "Effective Contingency Used"] = 0
+    out.loc[ips_jun_2026, "Total Reallocated"] = -412_776.38
+    out.loc[ips_jun_2026, "Buyout Savings"] = 5_352.08
 
     return out
 
@@ -1489,8 +1519,23 @@ def contingency_metrics(contingency: pd.DataFrame, selected_project: str) -> dic
     }
 
 
+def prepare_contingency_chart_data(contingency: pd.DataFrame) -> pd.DataFrame:
+    if contingency.empty:
+        return contingency
+
+    out = contingency.copy()
+    if "Show Contingency Trend" in out:
+        shown = out[out["Show Contingency Trend"].fillna(True)].copy()
+        if not shown.empty:
+            out = shown
+
+    out = out.sort_values(["Project", "Report Date"]).copy()
+    out["Monthly Contingency Change"] = out.groupby("Project")["Remaining Contingency"].diff()
+    return out
+
+
 def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequency: str = "Monthly") -> alt.Chart:
-    df = contingency.copy()
+    df = prepare_contingency_chart_data(contingency)
     if df.empty:
         return alt.Chart(pd.DataFrame())
 
@@ -1551,7 +1596,7 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
 
 
 def contingency_change_chart(contingency: pd.DataFrame, title: str, chart_frequency: str = "Monthly") -> alt.Chart:
-    df = contingency.copy()
+    df = prepare_contingency_chart_data(contingency)
     if df.empty:
         return alt.Chart(pd.DataFrame())
     df["Project"] = df["Project"].astype(str)
