@@ -126,6 +126,8 @@ TRANSLATIONS = {
         "latest_report": "Latest Report",
         "remaining_contingency": "Remaining Contingency",
         "remaining_contingency_by_project": "Remaining Contingency by Project",
+        "committed_projected_contingency": "Committed / Projected Contingency",
+        "committed_projected_change": "Committed / Projected Change",
         "monthly_contingency_change": "Projected Contingency Balance Change",
         "quarterly_contingency_change": "Quarterly Projected Contingency Balance Change",
         "report_month": "Report Month",
@@ -206,6 +208,8 @@ TRANSLATIONS = {
         "latest_report": "Último Relatório",
         "remaining_contingency": "Saldo de Contingência",
         "remaining_contingency_by_project": "Saldo de Contingência por Projeto",
+        "committed_projected_contingency": "Comprometido / Projetado da Contingência",
+        "committed_projected_change": "Variação do Comprometido / Projetado",
         "monthly_contingency_change": "Variação do Saldo Projetado da Contingência",
         "quarterly_contingency_change": "Variação Trimestral do Saldo Projetado da Contingência",
         "report_month": "Mês do Relatório",
@@ -583,6 +587,16 @@ def apply_contingency_semantics(contingency: pd.DataFrame) -> pd.DataFrame:
     out.loc[helms_mar_2026, "Contract Contingency"] = 51_342.00
     out.loc[helms_mar_2026, "Buyout Savings"] = 781_555.00
     out.loc[helms_mar_2026, "Net Savings"] = 832_897.00
+
+    helms_mar_carry_forward = helms & report_period.isin([pd.Period("2026-04"), pd.Period("2026-05")])
+    out.loc[helms_mar_carry_forward, "Show Contingency Trend"] = True
+    out.loc[helms_mar_carry_forward, "Committed / Projected Contingency"] = 1_228_789.46
+    out.loc[helms_mar_carry_forward, "Effective Contingency Used"] = 0
+    out.loc[helms_mar_carry_forward, "Total Reallocated"] = 0
+    out.loc[helms_mar_carry_forward, "Remaining Contingency"] = -251_330.46
+    out.loc[helms_mar_carry_forward, "Contract Contingency"] = 51_342.00
+    out.loc[helms_mar_carry_forward, "Buyout Savings"] = 781_555.00
+    out.loc[helms_mar_carry_forward, "Net Savings"] = 832_897.00
 
     isd_mar_or_later = isd & (report_period >= pd.Period("2026-03"))
     out.loc[isd_mar_or_later, "Original Contingency"] = 6_000_000.00
@@ -1519,18 +1533,27 @@ def contingency_metrics(contingency: pd.DataFrame, selected_project: str) -> dic
     }
 
 
+def is_helms_only(contingency: pd.DataFrame) -> bool:
+    if contingency.empty or "Project" not in contingency:
+        return False
+    projects = contingency["Project"].dropna().astype(str).unique().tolist()
+    return len(projects) == 1 and "Helms" in projects[0]
+
+
 def prepare_contingency_chart_data(contingency: pd.DataFrame) -> pd.DataFrame:
     if contingency.empty:
         return contingency
 
     out = contingency.copy()
+    trend_value_col = "Committed / Projected Contingency" if is_helms_only(out) else "Remaining Contingency"
     if "Show Contingency Trend" in out:
         shown = out[out["Show Contingency Trend"].fillna(True)].copy()
         if not shown.empty:
             out = shown
 
     out = out.sort_values(["Project", "Report Date"]).copy()
-    out["Monthly Contingency Change"] = out.groupby("Project")["Remaining Contingency"].diff()
+    out["Trend Value"] = out[trend_value_col]
+    out["Monthly Contingency Change"] = out.groupby("Project")["Trend Value"].diff()
     return out
 
 
@@ -1538,6 +1561,8 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
     df = prepare_contingency_chart_data(contingency)
     if df.empty:
         return alt.Chart(pd.DataFrame())
+    helms_only = is_helms_only(df)
+    tooltip_value_title = "Committed / Projected" if helms_only else "Remaining"
 
     if chart_frequency == "Quarterly":
         df = aggregate_last_by_quarter(df, "Report Date")
@@ -1554,7 +1579,7 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
         x_label_encoding = alt.X("yearmonth(Report Date):O")
         period_tooltip = alt.Tooltip("Report Date:T", title="Month", format="%b/%y")
 
-    df["Remaining Label"] = df["Remaining Contingency"].map(
+    df["Trend Label"] = df["Trend Value"].map(
         lambda value: "" if pd.isna(value) else f"{value / 1_000_000:.2f}MM"
     )
     projects = sorted(df["Project"].dropna().astype(str).unique())
@@ -1565,29 +1590,37 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
         .mark_line(point=True, strokeWidth=3)
         .encode(
             x=x_encoding,
-            y=alt.Y("Remaining Contingency:Q", axis=mm_axis("US$")),
+            y=alt.Y("Trend Value:Q", axis=mm_axis("US$")),
             color=alt.Color("Project:N", title="", scale=contingency_color_scale(projects)),
             tooltip=[
                 alt.Tooltip("Project:N"),
                 period_tooltip,
-                alt.Tooltip("Remaining Contingency:Q", title="Remaining", format=",.0f"),
+                alt.Tooltip("Trend Value:Q", title=tooltip_value_title, format=",.0f"),
+                alt.Tooltip("Original Contingency:Q", title="Original reserve", format=",.0f"),
                 alt.Tooltip("Total Reallocated:Q", title="Total reallocated", format=",.0f"),
             ],
         )
     )
-    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#B91C1C", strokeDash=[5, 5]).encode(y="y:Q")
+    reference = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#B91C1C", strokeDash=[5, 5]).encode(y="y:Q")
+    if helms_only and "Original Contingency" in df and df["Original Contingency"].notna().any():
+        original_reserve = df["Original Contingency"].dropna().iloc[-1]
+        reference = (
+            alt.Chart(pd.DataFrame({"y": [original_reserve]}))
+            .mark_rule(color=BRAND_GOLD, strokeDash=[5, 5], strokeWidth=2)
+            .encode(y="y:Q")
+        )
     labels = (
         alt.Chart(latest_labels)
         .mark_text(align="left", dx=8, dy=-8, fontSize=11, fontWeight="bold")
         .encode(
             x=x_label_encoding,
-            y=alt.Y("Remaining Contingency:Q"),
+            y=alt.Y("Trend Value:Q"),
             color=alt.Color("Project:N", title="", scale=contingency_color_scale(projects)),
-            text="Remaining Label:N",
+            text="Trend Label:N",
         )
     )
     return (
-        (line + zero + labels)
+        (line + reference + labels)
         .properties(height=320, title=title, padding={"left": 55, "bottom": 25, "right": 45})
         .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
         .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
@@ -2445,17 +2478,22 @@ else:
     chart_df = c.copy()
     if selected_project == "All projects":
         line_title = tr("remaining_contingency_by_project")
+    elif "Helms" in selected_project:
+        line_title = tr("committed_projected_contingency")
     else:
         line_title = tr("remaining_contingency")
     contingency_line = contingency_line_chart(chart_df, line_title, chart_frequency=chart_frequency)
     export_charts.append((line_title, contingency_line))
     st.altair_chart(contingency_line, use_container_width=True)
 
-    contingency_change_title = (
-        tr("quarterly_contingency_change")
-        if chart_frequency == "Quarterly"
-        else tr("monthly_contingency_change")
-    )
+    if "Helms" in selected_project:
+        contingency_change_title = tr("committed_projected_change")
+    else:
+        contingency_change_title = (
+            tr("quarterly_contingency_change")
+            if chart_frequency == "Quarterly"
+            else tr("monthly_contingency_change")
+        )
     contingency_change = contingency_change_chart(
         chart_df,
         contingency_change_title,
