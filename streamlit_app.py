@@ -360,8 +360,20 @@ def load_actual() -> pd.DataFrame:
         return pd.DataFrame()
     out = pd.concat(frames, ignore_index=True)
     out = out.dropna(subset=["Report Month"]).sort_values(["Project", "Report Month"])
+    out = align_actual_hard_cost_months(out)
     out["Period"] = out["Report Month"].dt.to_period("M").astype(str)
     return out
+
+
+def align_actual_hard_cost_months(actual: pd.DataFrame) -> pd.DataFrame:
+    if actual.empty or "Project" not in actual or "Report Month" not in actual:
+        return actual
+
+    out = actual.copy()
+    project_names = out["Project"].fillna("").astype(str)
+    one_month_lag = project_names.str.contains("IPP|IPS|Prairie Springs", case=False, regex=True)
+    out.loc[one_month_lag, "Report Month"] = out.loc[one_month_lag, "Report Month"] - pd.offsets.MonthEnd(1)
+    return out.sort_values(["Project", "Report Month"])
 
 
 def get_secret(name: str, default: str = "") -> str:
@@ -492,6 +504,7 @@ def baserow_rows_to_actual(rows: list[dict]) -> pd.DataFrame:
         }
     )
     out = out.dropna(subset=["Report Month"]).sort_values(["Project", "Report Month"])
+    out = align_actual_hard_cost_months(out)
     out["Period"] = out["Report Month"].dt.to_period("M").astype(str)
     return out
 
