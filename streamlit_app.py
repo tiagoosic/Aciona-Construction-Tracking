@@ -111,20 +111,28 @@ TRANSLATIONS = {
         "no_contingency": "No contingency tracking rows found for this selection.",
         "contingency_reserve": "Contingency Reserve",
         "original": "Original",
-        "remaining": "Remaining",
+        "remaining": "Projected Remaining",
         "remaining_pct": "Remaining %",
         "contingency_movement": "Contingency Movement",
-        "reallocated": "Reallocated",
-        "drawn": "Drawn",
+        "contingency_composition": "Contingency Composition",
+        "contingency_offsets": "Additional Cushion",
+        "reallocated": "Transferred / Reallocated",
+        "drawn": "Effectively Used",
+        "committed_projected": "Committed / Projected",
+        "effective_used": "Effectively Used",
+        "contract_contingency": "Contract Contingency",
+        "buyout_savings": "Buyout Savings",
+        "net_savings": "Net Savings",
         "latest_report": "Latest Report",
         "remaining_contingency": "Remaining Contingency",
         "remaining_contingency_by_project": "Remaining Contingency by Project",
-        "monthly_contingency_change": "Monthly Contingency Change",
-        "quarterly_contingency_change": "Quarterly Contingency Change",
+        "monthly_contingency_change": "Projected Contingency Balance Change",
+        "quarterly_contingency_change": "Quarterly Projected Contingency Balance Change",
         "report_month": "Report Month",
         "status": "Status",
         "monthly_change": "Monthly Change",
-        "drawn_to_date": "Drawn To Date",
+        "drawn_to_date": "Effectively Used To Date",
+        "committed_projected_to_date": "Committed / Projected To Date",
         "export_title": "Export",
         "export_help": "Download an A4 landscape HTML report with the current charts. Open it in a browser and print/save as PDF, or use it as the source for presentation screenshots.",
         "download_a4_html": "Download A4 report (HTML)",
@@ -183,20 +191,28 @@ TRANSLATIONS = {
         "no_contingency": "Não há linhas de contingência para esta seleção.",
         "contingency_reserve": "Reserva de Contingência",
         "original": "Original",
-        "remaining": "Saldo",
+        "remaining": "Saldo Projetado",
         "remaining_pct": "Saldo %",
         "contingency_movement": "Movimentação da Contingência",
-        "reallocated": "Realocado",
-        "drawn": "Utilizado",
+        "contingency_composition": "Composição da Contingência",
+        "contingency_offsets": "Proteção Adicional",
+        "reallocated": "Transferido / Realocado",
+        "drawn": "Efetivamente Utilizado",
+        "committed_projected": "Comprometido / Projetado",
+        "effective_used": "Efetivamente Utilizado",
+        "contract_contingency": "Contingência do Contrato",
+        "buyout_savings": "Buyout Savings",
+        "net_savings": "Net Savings",
         "latest_report": "Último Relatório",
         "remaining_contingency": "Saldo de Contingência",
         "remaining_contingency_by_project": "Saldo de Contingência por Projeto",
-        "monthly_contingency_change": "Variação Mensal da Contingência",
-        "quarterly_contingency_change": "Variação Trimestral da Contingência",
+        "monthly_contingency_change": "Variação do Saldo Projetado da Contingência",
+        "quarterly_contingency_change": "Variação Trimestral do Saldo Projetado da Contingência",
         "report_month": "Mês do Relatório",
         "status": "Status",
         "monthly_change": "Variação Mensal",
-        "drawn_to_date": "Utilizado Até a Data",
+        "drawn_to_date": "Efetivamente Utilizado Até a Data",
+        "committed_projected_to_date": "Comprometido / Projetado Até a Data",
         "export_title": "Exportação",
         "export_help": "Baixe um relatório HTML em A4 paisagem com os gráficos atuais. Abra no navegador e imprima/salve em PDF, ou use como fonte para capturas em apresentação.",
         "download_a4_html": "Baixar relatório A4 (HTML)",
@@ -524,7 +540,43 @@ def baserow_rows_to_contingency(rows: list[dict]) -> pd.DataFrame:
         }
     )
     out = out.dropna(subset=["Report Date"]).sort_values(["Project", "Report Date"])
+    out = apply_contingency_semantics(out)
     out["Period"] = out["Report Date"].dt.to_period("M").astype(str)
+    return out
+
+
+def apply_contingency_semantics(contingency: pd.DataFrame) -> pd.DataFrame:
+    if contingency.empty:
+        return contingency
+
+    out = contingency.copy()
+    out["Committed / Projected Contingency"] = out["Contingency Drawn To Date"]
+    out["Effective Contingency Used"] = out["Contingency Drawn To Date"]
+    out["Contract Contingency"] = pd.NA
+    out["Buyout Savings"] = pd.NA
+    out["Net Savings"] = pd.NA
+
+    helms = out["Project"].astype(str).str.contains("Helms", case=False, na=False)
+    report_period = out["Report Date"].dt.to_period("M")
+
+    helms_jun_2026 = helms & (report_period == pd.Period("2026-06"))
+    out.loc[helms_jun_2026, "Committed / Projected Contingency"] = 863_455.15
+    out.loc[helms_jun_2026, "Effective Contingency Used"] = 188_037.28
+    out.loc[helms_jun_2026, "Total Reallocated"] = -52_898.12
+    out.loc[helms_jun_2026, "Remaining Contingency"] = 114_003.85
+    out.loc[helms_jun_2026, "Contract Contingency"] = 51_342.00
+    out.loc[helms_jun_2026, "Buyout Savings"] = 809_420.10
+    out.loc[helms_jun_2026, "Net Savings"] = 807_863.98
+
+    helms_mar_2026 = helms & (report_period == pd.Period("2026-03"))
+    out.loc[helms_mar_2026, "Committed / Projected Contingency"] = 1_228_789.46
+    out.loc[helms_mar_2026, "Effective Contingency Used"] = 0
+    out.loc[helms_mar_2026, "Total Reallocated"] = 0
+    out.loc[helms_mar_2026, "Remaining Contingency"] = -251_330.46
+    out.loc[helms_mar_2026, "Contract Contingency"] = 51_342.00
+    out.loc[helms_mar_2026, "Buyout Savings"] = 781_555.00
+    out.loc[helms_mar_2026, "Net Savings"] = 832_897.00
+
     return out
 
 
@@ -593,6 +645,22 @@ def trim_after_completion(
     if not frames:
         return df
     return pd.concat(frames, ignore_index=True)
+
+
+def projected_baseline_completion_date(projected: pd.DataFrame) -> pd.Timestamp:
+    if projected.empty or "Month" not in projected:
+        return pd.NaT
+
+    valid = projected.dropna(subset=["Month"]).sort_values("Month")
+    if valid.empty:
+        return pd.NaT
+
+    if "Projected Cumulative Completion %" in valid:
+        completed = valid[valid["Projected Cumulative Completion %"].fillna(0) >= 100]
+        if not completed.empty:
+            return completed["Month"].iloc[0]
+
+    return valid["Month"].max()
 
 
 def add_month_number(df: pd.DataFrame, project_col: str, date_col: str, output_col: str) -> pd.DataFrame:
@@ -822,43 +890,38 @@ def metric_schedule_html(
     <div class="metric-card">
       <div class="metric-title">{title}</div>
       <div class="schedule-grid">
+        <div></div>
+        <div class="schedule-column-title">{tr("projected")}</div>
+        <div class="schedule-column-title">{tr("actual")}</div>
+        <div class="schedule-column-title">{tr("variance")}</div>
         <div class="schedule-row-title">{tr("start")}</div>
         <div>
-          <div class="metric-label">{tr("planned")}</div>
           <div class="metric-value metric-value-small">{planned_start}</div>
         </div>
         <div>
-          <div class="metric-label">{tr("actual_start")}</div>
           <div class="metric-value metric-value-small">{actual_start}</div>
         </div>
         <div>
-          <div class="metric-label">{tr("start_variance")}</div>
           <div class="metric-value metric-value-small">{start_variance}</div>
         </div>
         <div class="schedule-row-title">{tr("projected_completion")}</div>
         <div>
-          <div class="metric-label">{tr("planned")}</div>
           <div class="metric-value metric-value-small">{planned_completion}</div>
         </div>
         <div>
-          <div class="metric-label">{tr("forecast")}</div>
           <div class="metric-value metric-value-small">{forecast_completion}</div>
         </div>
         <div>
-          <div class="metric-label">{tr("completion_variance")}</div>
           <div class="metric-value metric-value-small">{completion_variance}</div>
         </div>
         <div class="schedule-row-title">{tr("duration")}</div>
         <div>
-          <div class="metric-label">{tr("planned")}</div>
           <div class="metric-value metric-value-small">{planned_duration}</div>
         </div>
         <div>
-          <div class="metric-label">{tr("forecast_duration")}</div>
           <div class="metric-value metric-value-small">{forecast_duration}</div>
         </div>
         <div>
-          <div class="metric-label">{tr("duration_variance")}</div>
           <div class="metric-value metric-value-small">{duration_variance}</div>
         </div>
       </div>
@@ -1378,6 +1441,10 @@ def contingency_metrics(contingency: pd.DataFrame, selected_project: str) -> dic
             "remaining": None,
             "reallocated": None,
             "drawn": None,
+            "committed_projected": None,
+            "contract_contingency": None,
+            "buyout_savings": None,
+            "net_savings": None,
             "remaining_pct": None,
         }
 
@@ -1387,14 +1454,22 @@ def contingency_metrics(contingency: pd.DataFrame, selected_project: str) -> dic
         original = latest["Original Contingency"].sum(min_count=1)
         remaining = latest["Remaining Contingency"].sum(min_count=1)
         reallocated = latest["Total Reallocated"].sum(min_count=1)
-        drawn = latest["Contingency Drawn To Date"].sum(min_count=1)
+        drawn = latest["Effective Contingency Used"].sum(min_count=1)
+        committed_projected = latest["Committed / Projected Contingency"].sum(min_count=1)
+        contract_contingency = latest["Contract Contingency"].sum(min_count=1)
+        buyout_savings = latest["Buyout Savings"].sum(min_count=1)
+        net_savings = latest["Net Savings"].sum(min_count=1)
     else:
         latest = contingency.sort_values("Report Date").tail(1)
         latest_date = latest["Report Date"].iloc[0] if not latest.empty else pd.NaT
         original = latest["Original Contingency"].iloc[0] if not latest.empty else None
         remaining = latest["Remaining Contingency"].iloc[0] if not latest.empty else None
         reallocated = latest["Total Reallocated"].iloc[0] if not latest.empty else None
-        drawn = latest["Contingency Drawn To Date"].iloc[0] if not latest.empty else None
+        drawn = latest["Effective Contingency Used"].iloc[0] if not latest.empty else None
+        committed_projected = latest["Committed / Projected Contingency"].iloc[0] if not latest.empty else None
+        contract_contingency = latest["Contract Contingency"].iloc[0] if not latest.empty else None
+        buyout_savings = latest["Buyout Savings"].iloc[0] if not latest.empty else None
+        net_savings = latest["Net Savings"].iloc[0] if not latest.empty else None
 
     remaining_pct = None
     if original is not None and pd.notna(original) and original != 0 and remaining is not None and pd.notna(remaining):
@@ -1406,6 +1481,10 @@ def contingency_metrics(contingency: pd.DataFrame, selected_project: str) -> dic
         "remaining": remaining,
         "reallocated": reallocated,
         "drawn": drawn,
+        "committed_projected": committed_projected,
+        "contract_contingency": contract_contingency,
+        "buyout_savings": buyout_savings,
+        "net_savings": net_savings,
         "remaining_pct": remaining_pct,
     }
 
@@ -1591,6 +1670,11 @@ def format_contingency_table(rows: pd.DataFrame) -> pd.DataFrame:
         "Remaining Contingency",
         "Monthly Contingency Change",
         "Total Reallocated",
+        "Committed / Projected Contingency",
+        "Effective Contingency Used",
+        "Buyout Savings",
+        "Contract Contingency",
+        "Net Savings",
         "Contingency Drawn To Date",
     ]
     for col in money_cols:
@@ -1716,6 +1800,13 @@ def build_a4_report_html(
       text-transform: uppercase;
       letter-spacing: 0.02em;
       padding-bottom: 3px;
+    }}
+    .schedule-column-title {{
+      color: #82613F;
+      font-size: 10px;
+      font-weight: 600;
+      padding-bottom: 4px;
+      text-align: center;
     }}
     .chart-section {{
       background: #FFFDF8;
@@ -1881,6 +1972,14 @@ st.markdown(
         padding-bottom: 3px;
         text-align: left;
     }
+    .schedule-column-title {
+        color: #82613F;
+        font-size: 0.74rem;
+        font-weight: 600;
+        padding-bottom: 4px;
+        text-align: center;
+        white-space: nowrap;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -2014,9 +2113,7 @@ latest_projected_row = latest_projected.iloc[0] if not latest_projected.empty el
 comparable_projected = comparable_projected_row(p, latest_actual_row, timeline_basis)
 projected_start = p["Month"].min() if not p.empty else pd.NaT
 actual_start = a["Report Month"].min() if not a.empty else pd.NaT
-projected_completion_date = (
-    latest_projected_row["Projected Completion Date"] if latest_projected_row is not None else pd.NaT
-)
+projected_completion_date = projected_baseline_completion_date(p)
 forecast_completion_date = (
     latest_actual_row["Forecast Completion Date"]
     if latest_actual_row is not None
@@ -2274,13 +2371,26 @@ else:
         st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
         st.markdown(
             metric_trio_html(
-                tr("contingency_movement"),
-                tr("reallocated"),
-                signed_money(contingency_summary["reallocated"]),
+                tr("contingency_composition"),
+                tr("committed_projected"),
+                money(contingency_summary["committed_projected"]),
                 tr("drawn"),
                 money(contingency_summary["drawn"]),
-                tr("reference"),
-                date_label(contingency_summary["latest_date"]),
+                tr("reallocated"),
+                signed_money(contingency_summary["reallocated"]),
+            ),
+            unsafe_allow_html=True,
+        )
+        st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+        st.markdown(
+            metric_trio_html(
+                tr("contingency_offsets"),
+                tr("buyout_savings"),
+                money(contingency_summary["buyout_savings"]),
+                tr("contract_contingency"),
+                money(contingency_summary["contract_contingency"]),
+                tr("net_savings"),
+                money(contingency_summary["net_savings"]),
             ),
             unsafe_allow_html=True,
         )
@@ -2316,9 +2426,11 @@ else:
         "Status",
         "Original Contingency",
         "Remaining Contingency",
-        "Monthly Contingency Change",
         "Total Reallocated",
-        "Contingency Drawn To Date",
+        "Committed / Projected Contingency",
+        "Effective Contingency Used",
+        "Buyout Savings",
+        "Net Savings",
     ]
     display_rows = format_contingency_table(latest_rows)
     st.dataframe(
@@ -2329,9 +2441,11 @@ else:
                 "Status": tr("status"),
                 "Original Contingency": tr("original"),
                 "Remaining Contingency": tr("remaining"),
-                "Monthly Contingency Change": tr("monthly_change"),
                 "Total Reallocated": tr("reallocated"),
-                "Contingency Drawn To Date": tr("drawn_to_date"),
+                "Committed / Projected Contingency": tr("committed_projected_to_date"),
+                "Effective Contingency Used": tr("drawn_to_date"),
+                "Buyout Savings": tr("buyout_savings"),
+                "Net Savings": tr("net_savings"),
             }
         ),
         use_container_width=True,
