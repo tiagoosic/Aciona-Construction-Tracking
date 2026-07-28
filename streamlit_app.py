@@ -121,6 +121,12 @@ TRANSLATIONS = {
         "contingency_offsets": "Additional Cushion",
         "contingency_investor_view": "Summary",
         "contingency_usage": "Reserve Usage",
+        "statement_metric": "Metric",
+        "less_committed_projected": "(-) Committed / Projected",
+        "used_to_date": "Used To Date",
+        "equals_projected_balance": "(=) Projected Balance",
+        "plus_buyout_savings": "(+) Buyout Savings",
+        "equals_net_savings": "(=) Net Savings",
         "owner_contingency_remaining": "Remaining Contingency",
         "additional_offsets": "Mapped Savings / Offsets",
         "adjusted_cushion": "Adjusted Cushion",
@@ -210,6 +216,12 @@ TRANSLATIONS = {
         "contingency_offsets": "Proteção Adicional",
         "contingency_investor_view": "Resumo",
         "contingency_usage": "Uso da Reserva",
+        "statement_metric": "Métrica",
+        "less_committed_projected": "(-) Comprometido / Projetado",
+        "used_to_date": "Utilizado Até a Data",
+        "equals_projected_balance": "(=) Saldo Projetado",
+        "plus_buyout_savings": "(+) Buyout Savings",
+        "equals_net_savings": "(=) Net Savings",
         "owner_contingency_remaining": "Saldo da Contingência",
         "additional_offsets": "Savings / Offsets Mapeados",
         "adjusted_cushion": "Proteção Ajustada",
@@ -943,6 +955,32 @@ def metric_trio_html(
           <div class="metric-value">{third_value}</div>
         </div>
       </div>
+    </div>
+    """
+
+
+def statement_table_html(title: str, table: pd.DataFrame) -> str:
+    header_cells = "".join(f"<th>{escape(str(col))}</th>" for col in table.columns)
+    body_rows = []
+    for _, row in table.iterrows():
+        metric = str(row.iloc[0])
+        row_class = " statement-total" if metric.startswith("(=)") else ""
+        if "Utilizado" in metric or "Used" in metric:
+            row_class = " statement-note"
+        cells = []
+        for value in row:
+            text = escape(str(value))
+            value_class = " negative" if text.startswith("-") else ""
+            cells.append(f"<td class='{value_class}'>{text}</td>")
+        body_rows.append(f"<tr class='{row_class}'>{''.join(cells)}</tr>")
+
+    return f"""
+    <div class="metric-card statement-card">
+      <div class="metric-title">{escape(title)}</div>
+      <table class="statement-table">
+        <thead><tr>{header_cells}</tr></thead>
+        <tbody>{''.join(body_rows)}</tbody>
+      </table>
     </div>
     """
 
@@ -1778,6 +1816,94 @@ def contingency_change_chart(contingency: pd.DataFrame, title: str, chart_freque
     )
 
 
+def statement_balance(value: float | int | None) -> str:
+    if pd.isna(value):
+        return "-"
+    return signed_money(value) if value < 0 else money(value)
+
+
+def statement_negative(value: float | int | None) -> str:
+    if pd.isna(value) or float(value) == 0:
+        return "-"
+    return signed_money(-abs(float(value)))
+
+
+def statement_positive(value: float | int | None) -> str:
+    if pd.isna(value) or float(value) == 0:
+        return "-"
+    return signed_money(abs(float(value)))
+
+
+def helms_contingency_statement(contingency: pd.DataFrame) -> pd.DataFrame:
+    helms = contingency[
+        contingency["Project"].fillna("").astype(str).str.contains("Helms", case=False, na=False)
+    ].copy()
+    if helms.empty:
+        return pd.DataFrame()
+
+    helms["Report Period"] = helms["Report Date"].dt.to_period("M")
+    latest_period = helms["Report Period"].max()
+    periods = [pd.Period("2026-03")]
+    if latest_period not in periods:
+        periods.append(latest_period)
+
+    milestones = []
+    for period in periods:
+        matched = helms[helms["Report Period"] == period].sort_values("Report Date")
+        if not matched.empty:
+            row = matched.iloc[-1]
+            milestones.append((date_label(row["Report Date"]), row))
+
+    baseline_source = helms.sort_values("Report Date").tail(1)
+    baseline_value = (
+        baseline_source["Original Contingency"].iloc[0]
+        if not baseline_source.empty
+        else pd.NA
+    )
+    baseline_label = "Viabilidade" if st.session_state.get("language", "pt") == "pt" else "Baseline"
+    rows = [
+        {
+            tr("statement_metric"): tr("original"),
+            baseline_label: money(baseline_value),
+        },
+        {
+            tr("statement_metric"): tr("less_committed_projected"),
+            baseline_label: "-",
+        },
+        {
+            tr("statement_metric"): tr("used_to_date"),
+            baseline_label: "-",
+        },
+        {
+            tr("statement_metric"): tr("equals_projected_balance"),
+            baseline_label: money(baseline_value),
+        },
+        {
+            tr("statement_metric"): tr("plus_buyout_savings"),
+            baseline_label: "-",
+        },
+        {
+            tr("statement_metric"): tr("equals_net_savings"),
+            baseline_label: "-",
+        },
+    ]
+    metric_key = tr("statement_metric")
+    row_by_label = {row[metric_key]: row for row in rows}
+    for label, row in milestones:
+        row_by_label[tr("original")][label] = money(row.get("Original Contingency"))
+        row_by_label[tr("less_committed_projected")][label] = statement_negative(
+            row.get("Committed / Projected Contingency")
+        )
+        row_by_label[tr("used_to_date")][label] = money(row.get("Effective Contingency Used"))
+        row_by_label[tr("equals_projected_balance")][label] = statement_balance(
+            row.get("Remaining Contingency")
+        )
+        row_by_label[tr("plus_buyout_savings")][label] = statement_positive(row.get("Buyout Savings"))
+        row_by_label[tr("equals_net_savings")][label] = money(row.get("Net Savings"))
+
+    return pd.DataFrame(rows)
+
+
 def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> alt.Chart:
     if contingency.empty:
         return alt.Chart(pd.DataFrame())
@@ -2217,6 +2343,51 @@ st.markdown(
         text-align: center;
         white-space: nowrap;
     }
+    .statement-card {
+        min-height: 0;
+    }
+    .statement-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        font-size: 0.92rem;
+    }
+    .statement-table th {
+        color: #82613F;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        border-bottom: 1px solid #E1D4BC;
+        padding: 8px 10px;
+        text-align: right;
+    }
+    .statement-table th:first-child,
+    .statement-table td:first-child {
+        text-align: left;
+        width: 34%;
+    }
+    .statement-table td {
+        border-bottom: 1px solid #EFE6D5;
+        padding: 9px 10px;
+        text-align: right;
+        color: #3D3533;
+        white-space: nowrap;
+    }
+    .statement-table tr:last-child td {
+        border-bottom: none;
+    }
+    .statement-table .statement-total td {
+        font-weight: 700;
+        background: #FBF8F1;
+    }
+    .statement-table .statement-note td {
+        color: #82613F;
+        font-size: 0.86rem;
+    }
+    .statement-table .negative {
+        color: #9A4A3A;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -2593,19 +2764,13 @@ if c.empty:
 else:
     contingency_summary = contingency_metrics(c, selected_project)
     is_helms_view = selected_project != "All projects" and "helms" in str(selected_project).lower()
-    _, cont_col, _ = st.columns([0.22, 0.56, 0.22])
+    column_widths = [0.12, 0.76, 0.12] if is_helms_view else [0.22, 0.56, 0.22]
+    _, cont_col, _ = st.columns(column_widths)
     with cont_col:
         if is_helms_view:
+            helms_statement = helms_contingency_statement(c)
             st.markdown(
-                metric_trio_html(
-                    tr("contingency_investor_view"),
-                    tr("original"),
-                    money(contingency_summary["original"]),
-                    tr("owner_contingency_remaining"),
-                    money(contingency_summary["remaining"]),
-                    tr("buyout_savings"),
-                    money(contingency_summary["buyout_savings"]),
-                ),
+                statement_table_html(tr("helms_contingency_timeline"), helms_statement),
                 unsafe_allow_html=True,
             )
         else:
@@ -2652,11 +2817,7 @@ else:
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 
     chart_df = c.copy()
-    if is_helms_view:
-        contingency_timeline = helms_contingency_timeline_chart(chart_df, tr("helms_contingency_timeline"))
-        export_charts.append((tr("helms_contingency_timeline"), contingency_timeline))
-        st.altair_chart(contingency_timeline, use_container_width=True)
-    else:
+    if not is_helms_view:
         if selected_project == "All projects":
             line_title = tr("remaining_contingency_by_project")
         else:
@@ -2678,26 +2839,7 @@ else:
         export_charts.append((contingency_change_title, contingency_change))
         st.altair_chart(contingency_change, use_container_width=True)
 
-    if selected_project == "All projects":
-        latest_rows = latest_contingency_by_project(c)
-    elif is_helms_view:
-        report_period = c["Report Date"].dt.to_period("M")
-        latest_period = report_period.max()
-        latest_rows = c[report_period.isin([pd.Period("2026-03"), latest_period])].sort_values("Report Date")
-    else:
-        latest_rows = c.sort_values("Report Date")
-    if is_helms_view:
-        display_cols = [
-            "Project",
-            "Report Month Label",
-            "Original Contingency",
-            "Remaining Contingency",
-            "Committed / Projected Contingency",
-            "Effective Contingency Used",
-            "Total Reallocated",
-            "Buyout Savings",
-        ]
-    else:
+        latest_rows = latest_contingency_by_project(c) if selected_project == "All projects" else c.sort_values("Report Date")
         display_cols = [
             "Project",
             "Report Month Label",
@@ -2710,26 +2852,26 @@ else:
             "Buyout Savings",
             "Net Savings",
         ]
-    display_rows = format_contingency_table(latest_rows)
-    st.dataframe(
-        display_rows[display_cols].rename(
-            columns={
-                "Project": tr("project"),
-                "Report Month Label": tr("report_month"),
-                "Status": tr("status"),
-                "Original Contingency": tr("original"),
-                "Remaining Contingency": tr("remaining"),
-                "Total Reallocated": tr("reallocated"),
-                "Committed / Projected Contingency": tr("committed_projected_to_date"),
-                "Effective Contingency Used": tr("drawn_to_date"),
-                "Buyout Savings": tr("buyout_savings"),
-                "Net Savings": tr("net_savings"),
-                "Adjusted Cushion": tr("adjusted_cushion"),
-            }
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
+        display_rows = format_contingency_table(latest_rows)
+        st.dataframe(
+            display_rows[display_cols].rename(
+                columns={
+                    "Project": tr("project"),
+                    "Report Month Label": tr("report_month"),
+                    "Status": tr("status"),
+                    "Original Contingency": tr("original"),
+                    "Remaining Contingency": tr("remaining"),
+                    "Total Reallocated": tr("reallocated"),
+                    "Committed / Projected Contingency": tr("committed_projected_to_date"),
+                    "Effective Contingency Used": tr("drawn_to_date"),
+                    "Buyout Savings": tr("buyout_savings"),
+                    "Net Savings": tr("net_savings"),
+                    "Adjusted Cushion": tr("adjusted_cushion"),
+                }
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 if logo_uri:
     st.sidebar.markdown(
