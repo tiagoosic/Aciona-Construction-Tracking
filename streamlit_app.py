@@ -119,12 +119,12 @@ TRANSLATIONS = {
         "contingency_movement": "Contingency Movement",
         "contingency_composition": "Contingency Composition",
         "contingency_offsets": "Additional Cushion",
-        "contingency_investor_view": "Reserve View",
+        "contingency_investor_view": "Summary",
         "contingency_usage": "Reserve Usage",
         "owner_contingency_remaining": "Remaining Contingency",
         "additional_offsets": "Mapped Savings / Offsets",
         "adjusted_cushion": "Adjusted Cushion",
-        "helms_contingency_timeline": "Helms Contingency Cushion Timeline",
+        "helms_contingency_timeline": "Helms Contingency and Buyout Savings",
         "original_contingency_series": "Original Contingency",
         "owner_remaining_series": "Remaining Contingency",
         "net_savings_offsets_series": "Buyout Savings",
@@ -208,12 +208,12 @@ TRANSLATIONS = {
         "contingency_movement": "Movimentação da Contingência",
         "contingency_composition": "Composição da Contingência",
         "contingency_offsets": "Proteção Adicional",
-        "contingency_investor_view": "Visão da Reserva",
+        "contingency_investor_view": "Resumo",
         "contingency_usage": "Uso da Reserva",
         "owner_contingency_remaining": "Saldo da Contingência",
         "additional_offsets": "Savings / Offsets Mapeados",
         "adjusted_cushion": "Proteção Ajustada",
-        "helms_contingency_timeline": "Evolução da Proteção de Contingência - Helms",
+        "helms_contingency_timeline": "Evolução da Contingência e Buyout Savings - Helms",
         "original_contingency_series": "Contingência Original",
         "owner_remaining_series": "Saldo da Contingência",
         "net_savings_offsets_series": "Buyout Savings",
@@ -1814,8 +1814,7 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
     for index, (_, row) in enumerate(milestones.iterrows(), start=1):
         reference = date_label(row["Report Date"])
         owner_remaining = row.get("Remaining Contingency")
-        net_savings = row.get("Net Savings")
-        total_cushion = row.get("Adjusted Cushion")
+        buyout_savings = row.get("Buyout Savings")
         rows.extend(
             [
                 {
@@ -1823,33 +1822,24 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
                     "Reference": reference,
                     "Component": tr("owner_remaining_series"),
                     "Value": owner_remaining,
-                    "Total": total_cushion,
                 },
                 {
                     "Sort": index,
                     "Reference": reference,
                     "Component": tr("net_savings_offsets_series"),
-                    "Value": net_savings,
-                    "Total": total_cushion,
+                    "Value": buyout_savings,
                 },
             ]
         )
 
     df = pd.DataFrame(rows).dropna(subset=["Value"])
+    df["Value Label"] = df["Value"].map(compact_signed_money)
+    df["Label Y"] = df["Value"].map(lambda value: value + 45_000 if value >= 0 else value - 45_000)
     sort_order = df.sort_values("Sort")["Reference"].drop_duplicates().tolist()
-    totals = (
-        df.sort_values("Sort")
-        .drop_duplicates("Reference", keep="last")
-        [["Sort", "Reference", "Total"]]
-        .dropna(subset=["Total"])
-        .copy()
-    )
-    totals["Total Label"] = totals["Total"].map(compact_signed_money)
-    totals["Label Y"] = totals["Total"].map(lambda value: value + 45_000 if value >= 0 else value - 45_000)
 
     bars = (
         alt.Chart(df)
-        .mark_bar(size=46, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+        .mark_bar(size=28, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
         .encode(
             x=alt.X("Reference:N", title=None, sort=sort_order, axis=alt.Axis(labelAngle=0, labelPadding=10)),
             y=alt.Y("Value:Q", axis=compact_usd_axis("US$")),
@@ -1869,18 +1859,18 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
                 alt.Tooltip("Reference:N", title=tr("report_month")),
                 alt.Tooltip("Component:N", title=""),
                 alt.Tooltip("Value:Q", title="US$", format=",.0f"),
-                alt.Tooltip("Total:Q", title=tr("adjusted_cushion"), format=",.0f"),
             ],
-            order=alt.Order("Component:N"),
+            xOffset="Component:N",
         )
     )
     labels = (
-        alt.Chart(totals)
+        alt.Chart(df)
         .mark_text(fontSize=11, fontWeight="bold", color=BRAND_EBONY)
         .encode(
             x=alt.X("Reference:N", sort=sort_order),
             y=alt.Y("Label Y:Q"),
-            text="Total Label:N",
+            text="Value Label:N",
+            xOffset="Component:N",
         )
     )
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color=BRAND_GRID).encode(y="y:Q")
@@ -2613,21 +2603,8 @@ else:
                     money(contingency_summary["original"]),
                     tr("owner_contingency_remaining"),
                     money(contingency_summary["remaining"]),
-                    tr("adjusted_cushion"),
-                    money(contingency_summary["adjusted_cushion"]),
-                ),
-                unsafe_allow_html=True,
-            )
-            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-            st.markdown(
-                metric_trio_html(
-                    tr("contingency_usage"),
-                    tr("committed_projected"),
-                    money(contingency_summary["committed_projected"]),
-                    tr("drawn"),
-                    money(contingency_summary["drawn"]),
-                    tr("reallocated"),
-                    signed_money(contingency_summary["reallocated"]),
+                    tr("buyout_savings"),
+                    money(contingency_summary["buyout_savings"]),
                 ),
                 unsafe_allow_html=True,
             )
@@ -2657,19 +2634,20 @@ else:
                 ),
                 unsafe_allow_html=True,
             )
-        st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-        st.markdown(
-            metric_trio_html(
-                tr("contingency_offsets"),
-                tr("buyout_savings"),
-                money(contingency_summary["buyout_savings"]),
-                tr("contract_contingency"),
-                money(contingency_summary["contract_contingency"]),
-                tr("net_savings"),
-                money(contingency_summary["net_savings"]),
-            ),
-            unsafe_allow_html=True,
-        )
+        if not is_helms_view:
+            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+            st.markdown(
+                metric_trio_html(
+                    tr("contingency_offsets"),
+                    tr("buyout_savings"),
+                    money(contingency_summary["buyout_savings"]),
+                    tr("contract_contingency"),
+                    money(contingency_summary["contract_contingency"]),
+                    tr("net_savings"),
+                    money(contingency_summary["net_savings"]),
+                ),
+                unsafe_allow_html=True,
+            )
 
     st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 
@@ -2708,19 +2686,30 @@ else:
         latest_rows = c[report_period.isin([pd.Period("2026-03"), latest_period])].sort_values("Report Date")
     else:
         latest_rows = c.sort_values("Report Date")
-    display_cols = [
-        "Project",
-        "Report Month Label",
-        "Status",
-        "Original Contingency",
-        "Remaining Contingency",
-        "Total Reallocated",
-        "Committed / Projected Contingency",
-        "Effective Contingency Used",
-        "Buyout Savings",
-        "Net Savings",
-        "Adjusted Cushion",
-    ]
+    if is_helms_view:
+        display_cols = [
+            "Project",
+            "Report Month Label",
+            "Original Contingency",
+            "Remaining Contingency",
+            "Committed / Projected Contingency",
+            "Effective Contingency Used",
+            "Total Reallocated",
+            "Buyout Savings",
+        ]
+    else:
+        display_cols = [
+            "Project",
+            "Report Month Label",
+            "Status",
+            "Original Contingency",
+            "Remaining Contingency",
+            "Total Reallocated",
+            "Committed / Projected Contingency",
+            "Effective Contingency Used",
+            "Buyout Savings",
+            "Net Savings",
+        ]
     display_rows = format_contingency_table(latest_rows)
     st.dataframe(
         display_rows[display_cols].rename(
