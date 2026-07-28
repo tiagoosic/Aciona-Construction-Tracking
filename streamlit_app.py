@@ -30,6 +30,9 @@ BASEROW_API_TOKEN_DEFAULT = ""
 BASEROW_PROJECTED_TABLE_ID_DEFAULT = "1019681"
 BASEROW_TRACKING_TABLE_ID_DEFAULT = "1019637"
 BASEROW_CONTINGENCY_TABLE_ID_DEFAULT = "1035197"
+HELMS_CONSTRUCTION_COST_TOTAL = 18_046_178.0
+HELMS_CONSTRUCTION_START = "2025-11-30"
+HELMS_CONSTRUCTION_END = "2027-07-31"
 
 BRAND_EBONY = "#3D3533"
 BRAND_GOLD = "#CC9955"
@@ -664,6 +667,38 @@ def normalize_projected_completion_month(projected: pd.DataFrame) -> pd.DataFram
         & (out["Projected Cumulative Completion %"] >= 100)
     )
     out.loc[mask, "Month"] = out.loc[mask, "Projected Completion Date"]
+    out = out.sort_values(["Project", "Month"])
+    out["Period"] = out["Month"].dt.to_period("M").astype(str)
+    return out
+
+
+def apply_projected_hard_cost_overrides(projected: pd.DataFrame) -> pd.DataFrame:
+    if projected.empty or "Project" not in projected:
+        return projected
+
+    out = projected.copy()
+    helms_mask = out["Project"].fillna("").astype(str).str.contains("Helms", case=False, na=False)
+    out = out.loc[~helms_mask].copy()
+
+    months = pd.date_range(HELMS_CONSTRUCTION_START, HELMS_CONSTRUCTION_END, freq="ME")
+    monthly_cost = HELMS_CONSTRUCTION_COST_TOTAL / len(months)
+    month_numbers = pd.Series(range(1, len(months) + 1), dtype="float")
+    cumulative_cost = month_numbers * monthly_cost
+    helms_curve = pd.DataFrame(
+        {
+            "Project": "Helms",
+            "Month": months,
+            "Phase": "Construction",
+            "Projected Monthly Hard Cost": monthly_cost,
+            "Projected Cumulative Hard Cost": cumulative_cost,
+            "Projected Monthly Completion %": monthly_cost / HELMS_CONSTRUCTION_COST_TOTAL * 100,
+            "Projected Cumulative Completion %": cumulative_cost / HELMS_CONSTRUCTION_COST_TOTAL * 100,
+            "Projected Completion Date": pd.Timestamp(HELMS_CONSTRUCTION_END),
+            "Curve Month No": month_numbers,
+            "Source": "Helms construction cost override",
+        }
+    )
+    out = pd.concat([out, helms_curve], ignore_index=True)
     out = out.sort_values(["Project", "Month"])
     out["Period"] = out["Month"].dt.to_period("M").astype(str)
     return out
@@ -2076,6 +2111,7 @@ except Exception as exc:
     st.error(f"{tr('baserow_failed')}: {exc}")
     st.stop()
 
+projected_df = apply_projected_hard_cost_overrides(projected_df)
 projected_df = normalize_projected_completion_month(projected_df)
 projected_df = trim_after_completion(
     projected_df,
