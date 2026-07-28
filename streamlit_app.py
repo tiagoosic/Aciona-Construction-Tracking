@@ -125,8 +125,9 @@ TRANSLATIONS = {
         "additional_offsets": "Mapped Savings / Offsets",
         "adjusted_cushion": "Adjusted Cushion",
         "helms_contingency_timeline": "Helms Contingency Cushion Timeline",
-        "owner_reserve_series": "Owner Reserve",
-        "adjusted_cushion_series": "Adjusted Cushion",
+        "original_contingency_series": "Original Contingency",
+        "owner_remaining_series": "Remaining Owner Contingency",
+        "net_savings_offsets_series": "Net Savings / Offsets",
         "reallocated": "Transferred / Reallocated",
         "drawn": "Effectively Used",
         "committed_projected": "Committed / Projected",
@@ -213,8 +214,9 @@ TRANSLATIONS = {
         "additional_offsets": "Savings / Offsets Mapeados",
         "adjusted_cushion": "Proteção Ajustada",
         "helms_contingency_timeline": "Evolução da Proteção de Contingência - Helms",
-        "owner_reserve_series": "Reserva Owner",
-        "adjusted_cushion_series": "Proteção Ajustada",
+        "original_contingency_series": "Contingência Original",
+        "owner_remaining_series": "Saldo da Contingência Owner",
+        "net_savings_offsets_series": "Net Savings / Offsets",
         "reallocated": "Transferido / Realocado",
         "drawn": "Efetivamente Utilizado",
         "committed_projected": "Comprometido / Projetado",
@@ -1799,74 +1801,86 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
 
     baseline_original = milestones["Original Contingency"].dropna()
     baseline_value = baseline_original.iloc[-1] if not baseline_original.empty else pd.NA
+    baseline_label = "Viabilidade" if st.session_state.get("language", "pt") == "pt" else "Baseline"
     rows = [
         {
             "Sort": 0,
-            "Reference": "Viabilidade" if st.session_state.get("language", "pt") == "pt" else "Baseline",
-            "Series": tr("owner_reserve_series"),
+            "Reference": baseline_label,
+            "Component": tr("original_contingency_series"),
             "Value": baseline_value,
-        },
-        {
-            "Sort": 0,
-            "Reference": "Viabilidade" if st.session_state.get("language", "pt") == "pt" else "Baseline",
-            "Series": tr("adjusted_cushion_series"),
-            "Value": baseline_value,
+            "Total": baseline_value,
         },
     ]
     for index, (_, row) in enumerate(milestones.iterrows(), start=1):
         reference = date_label(row["Report Date"])
+        owner_remaining = row.get("Remaining Contingency")
+        net_savings = row.get("Net Savings")
+        total_cushion = row.get("Adjusted Cushion")
         rows.extend(
             [
                 {
                     "Sort": index,
                     "Reference": reference,
-                    "Series": tr("owner_reserve_series"),
-                    "Value": row.get("Remaining Contingency"),
+                    "Component": tr("owner_remaining_series"),
+                    "Value": owner_remaining,
+                    "Total": total_cushion,
                 },
                 {
                     "Sort": index,
                     "Reference": reference,
-                    "Series": tr("adjusted_cushion_series"),
-                    "Value": row.get("Adjusted Cushion"),
+                    "Component": tr("net_savings_offsets_series"),
+                    "Value": net_savings,
+                    "Total": total_cushion,
                 },
             ]
         )
 
     df = pd.DataFrame(rows).dropna(subset=["Value"])
-    df["Value Label"] = df["Value"].map(compact_signed_money)
-    df["Label Y"] = df["Value"].map(lambda value: value + 45_000 if value >= 0 else value - 45_000)
     sort_order = df.sort_values("Sort")["Reference"].drop_duplicates().tolist()
+    totals = (
+        df.sort_values("Sort")
+        .drop_duplicates("Reference", keep="last")
+        [["Sort", "Reference", "Total"]]
+        .dropna(subset=["Total"])
+        .copy()
+    )
+    totals["Total Label"] = totals["Total"].map(compact_signed_money)
+    totals["Label Y"] = totals["Total"].map(lambda value: value + 45_000 if value >= 0 else value - 45_000)
 
     bars = (
         alt.Chart(df)
-        .mark_bar(size=28, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+        .mark_bar(size=46, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
         .encode(
             x=alt.X("Reference:N", title=None, sort=sort_order, axis=alt.Axis(labelAngle=0, labelPadding=10)),
             y=alt.Y("Value:Q", axis=compact_usd_axis("US$")),
             color=alt.Color(
-                "Series:N",
+                "Component:N",
                 title="",
                 scale=alt.Scale(
-                    domain=[tr("owner_reserve_series"), tr("adjusted_cushion_series")],
-                    range=[BRAND_GOLD, BRAND_EBONY],
+                    domain=[
+                        tr("original_contingency_series"),
+                        tr("owner_remaining_series"),
+                        tr("net_savings_offsets_series"),
+                    ],
+                    range=[BRAND_GRAPHITE, BRAND_GOLD, BRAND_TERRA_SOFT],
                 ),
             ),
             tooltip=[
                 alt.Tooltip("Reference:N", title=tr("report_month")),
-                alt.Tooltip("Series:N", title=""),
+                alt.Tooltip("Component:N", title=""),
                 alt.Tooltip("Value:Q", title="US$", format=",.0f"),
+                alt.Tooltip("Total:Q", title=tr("adjusted_cushion"), format=",.0f"),
             ],
-            xOffset="Series:N",
+            order=alt.Order("Component:N"),
         )
     )
     labels = (
-        alt.Chart(df)
+        alt.Chart(totals)
         .mark_text(fontSize=11, fontWeight="bold", color=BRAND_EBONY)
         .encode(
             x=alt.X("Reference:N", sort=sort_order),
             y=alt.Y("Label Y:Q"),
-            text="Value Label:N",
-            xOffset="Series:N",
+            text="Total Label:N",
         )
     )
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color=BRAND_GRID).encode(y="y:Q")
