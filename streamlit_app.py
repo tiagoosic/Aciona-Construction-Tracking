@@ -1834,12 +1834,12 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
 
     df = pd.DataFrame(rows).dropna(subset=["Value"])
     df["Value Label"] = df["Value"].map(compact_signed_money)
+    df["Label Y"] = df["Value"].map(lambda value: value + 45_000 if value >= 0 else value - 45_000)
     sort_order = df.sort_values("Sort")["Reference"].drop_duplicates().tolist()
 
-    latest_labels = df.sort_values(["Series", "Sort"]).groupby("Series", as_index=False).tail(1)
-    line = (
+    bars = (
         alt.Chart(df)
-        .mark_line(point=True, strokeWidth=3)
+        .mark_bar(size=28, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
         .encode(
             x=alt.X("Reference:N", title=None, sort=sort_order, axis=alt.Axis(labelAngle=0, labelPadding=10)),
             y=alt.Y("Value:Q", axis=compact_usd_axis("US$")),
@@ -1856,29 +1856,23 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
                 alt.Tooltip("Series:N", title=""),
                 alt.Tooltip("Value:Q", title="US$", format=",.0f"),
             ],
+            xOffset="Series:N",
         )
     )
     labels = (
-        alt.Chart(latest_labels)
-        .mark_text(align="left", dx=8, dy=-8, fontSize=11, fontWeight="bold")
+        alt.Chart(df)
+        .mark_text(fontSize=11, fontWeight="bold", color=BRAND_EBONY)
         .encode(
             x=alt.X("Reference:N", sort=sort_order),
-            y=alt.Y("Value:Q"),
-            color=alt.Color(
-                "Series:N",
-                title="",
-                scale=alt.Scale(
-                    domain=[tr("owner_reserve_series"), tr("adjusted_cushion_series")],
-                    range=[BRAND_GOLD, BRAND_EBONY],
-                ),
-            ),
+            y=alt.Y("Label Y:Q"),
             text="Value Label:N",
+            xOffset="Series:N",
         )
     )
-    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#B91C1C", strokeDash=[5, 5]).encode(y="y:Q")
+    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color=BRAND_GRID).encode(y="y:Q")
     return (
-        (line + zero + labels)
-        .properties(height=320, title=title, padding={"left": 55, "bottom": 25, "right": 45})
+        (zero + bars + labels)
+        .properties(height=340, title=title, padding={"left": 55, "top": 20, "bottom": 30, "right": 45})
         .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
         .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
         .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
