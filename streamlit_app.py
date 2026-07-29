@@ -2797,12 +2797,6 @@ if not p.empty or not a.empty:
                 axis=month_axis(label_padding=10),
             )
 
-        monthly_label_df = monthly_df[
-            (monthly_df["Series"] == tr("actual"))
-            & (pd.to_numeric(monthly_df["Value"], errors="coerce") > 0)
-        ].copy()
-        monthly_label_df["Value Label"] = monthly_label_df["Value"].map(compact_money_label)
-
         bars = (
             alt.Chart(monthly_df)
             .mark_bar()
@@ -2821,28 +2815,8 @@ if not p.empty or not a.empty:
                 tooltip=monthly_tooltip,
             )
         )
-        actual_label_halo = (
-            alt.Chart(monthly_label_df)
-            .mark_text(dy=-10, fontSize=16, fontWeight="bold", color="white", stroke="white", strokeWidth=4)
-            .encode(
-                x=monthly_x,
-                y=alt.Y("Value:Q"),
-                xOffset="Series:N",
-                text="Value Label:N",
-            )
-        )
-        actual_label_text = (
-            alt.Chart(monthly_label_df)
-            .mark_text(dy=-10, fontSize=16, fontWeight="bold", color=BRAND_EBONY)
-            .encode(
-                x=monthly_x,
-                y=alt.Y("Value:Q"),
-                xOffset="Series:N",
-                text="Value Label:N",
-            )
-        )
         chart = (
-            (bars + actual_label_halo + actual_label_text)
+            bars
             .properties(height=360, title=hard_cost_title, padding={"left": 55, "bottom": 25, "right": 35})
             .configure_axis(
                 labelColor=BRAND_GRAPHITE,
