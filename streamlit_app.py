@@ -278,15 +278,15 @@ def month_axis(label_padding: int = 12, label_angle: int | None = None) -> alt.A
             ),
             labelAngle=angle,
             labelPadding=label_padding,
-            labelFontSize=14,
-            titleFontSize=15,
+            labelFontSize=16,
+            titleFontSize=17,
         )
     return alt.Axis(
         format="%b/%y",
         labelAngle=0 if label_angle is None else label_angle,
         labelPadding=label_padding,
-        labelFontSize=14,
-        titleFontSize=15,
+        labelFontSize=16,
+        titleFontSize=17,
     )
 
 
@@ -859,6 +859,17 @@ def compact_signed_money(value: float | int | None) -> str:
     return f"{sign}US$ {absolute:,.0f}"
 
 
+def compact_money_label(value: float | int | None) -> str:
+    if pd.isna(value):
+        return ""
+    absolute = abs(float(value))
+    if absolute >= 1_000_000:
+        return f"US$ {absolute / 1_000_000:,.1f}MM"
+    if absolute >= 1_000:
+        return f"US$ {absolute / 1_000:,.0f}K"
+    return f"US$ {absolute:,.0f}"
+
+
 def pct(value: float | int | None) -> str:
     if pd.isna(value):
         return "-"
@@ -1097,9 +1108,14 @@ def mm_axis(title: str = "US$") -> alt.Axis:
         title=title,
         titlePadding=28,
         labelPadding=8,
-        labelFontSize=14,
-        titleFontSize=15,
-        labelExpr="datum.value == 0 ? '0' : format(datum.value / 1000000, '.0f') + 'MM'",
+        labelFontSize=16,
+        titleFontSize=17,
+        tickCount=6,
+        labelExpr=(
+            "datum.value == 0 ? '0' : "
+            "abs(datum.value) < 1000000 ? format(datum.value / 1000, '.0f') + 'K' : "
+            "format(datum.value / 1000000, '.1f') + 'MM'"
+        ),
     )
 
 
@@ -1108,8 +1124,9 @@ def compact_usd_axis(title: str = "US$") -> alt.Axis:
         title=title,
         titlePadding=28,
         labelPadding=8,
-        labelFontSize=14,
-        titleFontSize=15,
+        labelFontSize=16,
+        titleFontSize=17,
+        tickCount=6,
         labelExpr=(
             "datum.value == 0 ? '0' : "
             "abs(datum.value) >= 1000000 ? format(datum.value / 1000000, '.1f') + 'MM' : "
@@ -1159,11 +1176,11 @@ def line_chart(df: pd.DataFrame, y_field: str, title: str, y_title: str) -> alt.
             labelColor=BRAND_GRAPHITE,
             titleColor=BRAND_GRAPHITE,
             gridColor=BRAND_GRID,
-            labelFontSize=14,
-            titleFontSize=15,
+            labelFontSize=16,
+            titleFontSize=17,
         )
-        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
-        .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=16, titleFontSize=17)
+        .configure_title(color=BRAND_EBONY, fontSize=21, anchor="middle")
     )
 
 
@@ -1288,7 +1305,7 @@ def cumulative_cost_chart(
             "PeriodLabel:N",
             title=None,
             sort=period_sort_list(df),
-            axis=alt.Axis(labelAngle=0, labelPadding=12, labelFontSize=14, titleFontSize=15),
+            axis=alt.Axis(labelAngle=0, labelPadding=12, labelFontSize=16, titleFontSize=17),
         )
         tooltip.insert(0, alt.Tooltip("PeriodLabel:N", title="Quarter"))
     elif timeline_basis == "Month since start":
@@ -1362,7 +1379,7 @@ def cumulative_cost_chart(
         .mark_text(
             align="center",
             dy=-12,
-            fontSize=15,
+            fontSize=16,
             fontWeight="bold",
             color="white",
             stroke="white",
@@ -1376,7 +1393,7 @@ def cumulative_cost_chart(
     )
     label_text = (
         alt.Chart(labels_df)
-        .mark_text(align="center", dy=-12, fontSize=15, fontWeight="bold")
+        .mark_text(align="center", dy=-12, fontSize=16, fontWeight="bold")
         .encode(
             x=x_encoding,
             y=alt.Y("Value:Q"),
@@ -1402,11 +1419,11 @@ def cumulative_cost_chart(
             labelColor=BRAND_GRAPHITE,
             titleColor=BRAND_GRAPHITE,
             gridColor=BRAND_GRID,
-            labelFontSize=14,
-            titleFontSize=15,
+            labelFontSize=16,
+            titleFontSize=17,
         )
-        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
-        .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=16, titleFontSize=17)
+        .configure_title(color=BRAND_EBONY, fontSize=21, anchor="middle")
     )
 
 
@@ -1698,7 +1715,7 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
             "PeriodLabel:N",
             title=None,
             sort=period_sort_list(df),
-            axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=14, titleFontSize=15),
+            axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=16, titleFontSize=17),
         )
         x_label_encoding = alt.X("PeriodLabel:N", sort=period_sort_list(df))
         period_tooltip = alt.Tooltip("PeriodLabel:N", title="Quarter")
@@ -1731,7 +1748,7 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#B91C1C", strokeDash=[5, 5]).encode(y="y:Q")
     labels = (
         alt.Chart(latest_labels)
-        .mark_text(align="left", dx=8, dy=-8, fontSize=15, fontWeight="bold")
+        .mark_text(align="left", dx=8, dy=-8, fontSize=16, fontWeight="bold")
         .encode(
             x=x_label_encoding,
             y=alt.Y("Remaining Contingency:Q"),
@@ -1746,11 +1763,11 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
             labelColor=BRAND_GRAPHITE,
             titleColor=BRAND_GRAPHITE,
             gridColor=BRAND_GRID,
-            labelFontSize=14,
-            titleFontSize=15,
+            labelFontSize=16,
+            titleFontSize=17,
         )
-        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
-        .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=16, titleFontSize=17)
+        .configure_title(color=BRAND_EBONY, fontSize=21, anchor="middle")
     )
 
 
@@ -1772,7 +1789,7 @@ def contingency_change_chart(contingency: pd.DataFrame, title: str, chart_freque
             "PeriodLabel:N",
             title=None,
             sort=period_sort_list(df),
-            axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=14, titleFontSize=15),
+            axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=16, titleFontSize=17),
         )
         x_label_encoding = alt.X("PeriodLabel:N", sort=period_sort_list(df))
         period_tooltip = alt.Tooltip("PeriodLabel:N", title="Quarter")
@@ -1838,7 +1855,7 @@ def contingency_change_chart(contingency: pd.DataFrame, title: str, chart_freque
     )
     labels = (
         alt.Chart(totals)
-        .mark_text(fontSize=15, fontWeight="bold", color=BRAND_EBONY)
+        .mark_text(fontSize=16, fontWeight="bold", color=BRAND_EBONY)
         .encode(**label_encodings)
     )
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color=BRAND_GRID).encode(y="y:Q")
@@ -1850,12 +1867,12 @@ def contingency_change_chart(contingency: pd.DataFrame, title: str, chart_freque
             labelColor=BRAND_GRAPHITE,
             titleColor=BRAND_GRAPHITE,
             gridColor=BRAND_GRID,
-            labelFontSize=14,
-            titleFontSize=15,
+            labelFontSize=16,
+            titleFontSize=17,
         )
         .configure_header(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
-        .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=16, titleFontSize=17)
+        .configure_title(color=BRAND_EBONY, fontSize=21, anchor="middle")
     )
 
 
@@ -2010,7 +2027,7 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
         alt.Chart(df)
         .mark_bar(size=28, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
         .encode(
-            x=alt.X("Reference:N", title=None, sort=sort_order, axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=14, titleFontSize=15)),
+            x=alt.X("Reference:N", title=None, sort=sort_order, axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=16, titleFontSize=17)),
             y=alt.Y("Value:Q", axis=compact_usd_axis("US$")),
             color=alt.Color(
                 "Component:N",
@@ -2034,7 +2051,7 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
     )
     labels = (
         alt.Chart(df)
-        .mark_text(fontSize=15, fontWeight="bold", color=BRAND_EBONY)
+        .mark_text(fontSize=16, fontWeight="bold", color=BRAND_EBONY)
         .encode(
             x=alt.X("Reference:N", sort=sort_order),
             y=alt.Y("Label Y:Q"),
@@ -2050,11 +2067,11 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
             labelColor=BRAND_GRAPHITE,
             titleColor=BRAND_GRAPHITE,
             gridColor=BRAND_GRID,
-            labelFontSize=14,
-            titleFontSize=15,
+            labelFontSize=16,
+            titleFontSize=17,
         )
-        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
-        .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=16, titleFontSize=17)
+        .configure_title(color=BRAND_EBONY, fontSize=21, anchor="middle")
     )
 
 
@@ -2760,7 +2777,7 @@ if not p.empty or not a.empty:
                 "PeriodLabel:N",
                 title=None,
                 sort=period_sort_list(monthly_df),
-                axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=14, titleFontSize=15),
+                axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=16, titleFontSize=17),
             )
             monthly_tooltip = [
                 alt.Tooltip("PeriodLabel:N", title="Quarter"),
@@ -2780,7 +2797,13 @@ if not p.empty or not a.empty:
                 axis=month_axis(label_padding=10),
             )
 
-        chart = (
+        monthly_label_df = monthly_df[
+            (monthly_df["Series"] == tr("actual"))
+            & (pd.to_numeric(monthly_df["Value"], errors="coerce") > 0)
+        ].copy()
+        monthly_label_df["Value Label"] = monthly_label_df["Value"].map(compact_money_label)
+
+        bars = (
             alt.Chart(monthly_df)
             .mark_bar()
             .encode(
@@ -2797,16 +2820,39 @@ if not p.empty or not a.empty:
                 xOffset="Series:N",
                 tooltip=monthly_tooltip,
             )
+        )
+        actual_label_halo = (
+            alt.Chart(monthly_label_df)
+            .mark_text(dy=-10, fontSize=16, fontWeight="bold", color="white", stroke="white", strokeWidth=4)
+            .encode(
+                x=monthly_x,
+                y=alt.Y("Value:Q"),
+                xOffset="Series:N",
+                text="Value Label:N",
+            )
+        )
+        actual_label_text = (
+            alt.Chart(monthly_label_df)
+            .mark_text(dy=-10, fontSize=16, fontWeight="bold", color=BRAND_EBONY)
+            .encode(
+                x=monthly_x,
+                y=alt.Y("Value:Q"),
+                xOffset="Series:N",
+                text="Value Label:N",
+            )
+        )
+        chart = (
+            (bars + actual_label_halo + actual_label_text)
             .properties(height=360, title=hard_cost_title, padding={"left": 55, "bottom": 25, "right": 35})
             .configure_axis(
                 labelColor=BRAND_GRAPHITE,
                 titleColor=BRAND_GRAPHITE,
                 gridColor=BRAND_GRID,
-                labelFontSize=14,
-                titleFontSize=15,
+                labelFontSize=16,
+                titleFontSize=17,
             )
-            .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
-            .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
+            .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=16, titleFontSize=17)
+            .configure_title(color=BRAND_EBONY, fontSize=21, anchor="middle")
         )
         export_charts.append((hard_cost_title, chart))
         st.altair_chart(chart, use_container_width=True)
