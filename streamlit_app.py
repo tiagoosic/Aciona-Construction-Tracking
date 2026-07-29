@@ -32,7 +32,8 @@ BASEROW_TRACKING_TABLE_ID_DEFAULT = "1019637"
 BASEROW_CONTINGENCY_TABLE_ID_DEFAULT = "1035197"
 HELMS_CONSTRUCTION_COST_TOTAL = 18_046_178.0
 HELMS_CONSTRUCTION_START = "2025-11-01"
-HELMS_CONSTRUCTION_END = "2027-07-31"
+HELMS_CONSTRUCTION_COMPLETION = "2027-11-30"
+HELMS_CONSTRUCTION_MONTHS = 24
 
 BRAND_EBONY = "#3D3533"
 BRAND_GOLD = "#CC9955"
@@ -277,8 +278,16 @@ def month_axis(label_padding: int = 12, label_angle: int | None = None) -> alt.A
             ),
             labelAngle=angle,
             labelPadding=label_padding,
+            labelFontSize=14,
+            titleFontSize=15,
         )
-    return alt.Axis(format="%b/%y", labelAngle=0 if label_angle is None else label_angle, labelPadding=label_padding)
+    return alt.Axis(
+        format="%b/%y",
+        labelAngle=0 if label_angle is None else label_angle,
+        labelPadding=label_padding,
+        labelFontSize=14,
+        titleFontSize=15,
+    )
 
 
 def add_quarter_fields(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
@@ -714,20 +723,26 @@ def apply_projected_hard_cost_overrides(projected: pd.DataFrame) -> pd.DataFrame
     helms_mask = out["Project"].fillna("").astype(str).str.contains("Helms", case=False, na=False)
     out = out.loc[~helms_mask].copy()
 
-    months = pd.date_range(HELMS_CONSTRUCTION_START, HELMS_CONSTRUCTION_END, freq="ME")
-    monthly_cost = HELMS_CONSTRUCTION_COST_TOTAL / len(months)
+    cost_months = pd.date_range(
+        end=HELMS_CONSTRUCTION_COMPLETION,
+        periods=HELMS_CONSTRUCTION_MONTHS,
+        freq="ME",
+    )
+    months = pd.DatetimeIndex([pd.Timestamp(HELMS_CONSTRUCTION_START)]).append(cost_months)
+    monthly_cost = HELMS_CONSTRUCTION_COST_TOTAL / HELMS_CONSTRUCTION_MONTHS
+    monthly_costs = pd.Series([0.0] + [monthly_cost] * HELMS_CONSTRUCTION_MONTHS)
     month_numbers = pd.Series(range(1, len(months) + 1), dtype="float")
-    cumulative_cost = month_numbers * monthly_cost
+    cumulative_cost = monthly_costs.cumsum()
     helms_curve = pd.DataFrame(
         {
             "Project": "Helms",
             "Month": months,
             "Phase": "Construction",
-            "Projected Monthly Hard Cost": monthly_cost,
+            "Projected Monthly Hard Cost": monthly_costs,
             "Projected Cumulative Hard Cost": cumulative_cost,
-            "Projected Monthly Completion %": monthly_cost / HELMS_CONSTRUCTION_COST_TOTAL * 100,
+            "Projected Monthly Completion %": monthly_costs / HELMS_CONSTRUCTION_COST_TOTAL * 100,
             "Projected Cumulative Completion %": cumulative_cost / HELMS_CONSTRUCTION_COST_TOTAL * 100,
-            "Projected Completion Date": pd.Timestamp(HELMS_CONSTRUCTION_END),
+            "Projected Completion Date": pd.Timestamp(HELMS_CONSTRUCTION_COMPLETION),
             "Curve Month No": month_numbers,
             "Source": "Helms construction cost override",
         }
@@ -1082,6 +1097,8 @@ def mm_axis(title: str = "US$") -> alt.Axis:
         title=title,
         titlePadding=28,
         labelPadding=8,
+        labelFontSize=14,
+        titleFontSize=15,
         labelExpr="datum.value == 0 ? '0' : format(datum.value / 1000000, '.0f') + 'MM'",
     )
 
@@ -1091,6 +1108,8 @@ def compact_usd_axis(title: str = "US$") -> alt.Axis:
         title=title,
         titlePadding=28,
         labelPadding=8,
+        labelFontSize=14,
+        titleFontSize=15,
         labelExpr=(
             "datum.value == 0 ? '0' : "
             "abs(datum.value) >= 1000000 ? format(datum.value / 1000000, '.1f') + 'MM' : "
@@ -1135,10 +1154,16 @@ def line_chart(df: pd.DataFrame, y_field: str, title: str, y_title: str) -> alt.
                 alt.Tooltip(f"{y_field}:Q", title=y_title, format=",.2f"),
             ],
         )
-        .properties(height=320, title=title, padding={"left": 55, "bottom": 25, "right": 35})
-        .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
-        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
+        .properties(height=360, title=title, padding={"left": 55, "bottom": 25, "right": 35})
+        .configure_axis(
+            labelColor=BRAND_GRAPHITE,
+            titleColor=BRAND_GRAPHITE,
+            gridColor=BRAND_GRID,
+            labelFontSize=14,
+            titleFontSize=15,
+        )
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
+        .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
     )
 
 
@@ -1263,7 +1288,7 @@ def cumulative_cost_chart(
             "PeriodLabel:N",
             title=None,
             sort=period_sort_list(df),
-            axis=alt.Axis(labelAngle=0, labelPadding=12),
+            axis=alt.Axis(labelAngle=0, labelPadding=12, labelFontSize=14, titleFontSize=15),
         )
         tooltip.insert(0, alt.Tooltip("PeriodLabel:N", title="Quarter"))
     elif timeline_basis == "Month since start":
@@ -1337,7 +1362,7 @@ def cumulative_cost_chart(
         .mark_text(
             align="center",
             dy=-12,
-            fontSize=11,
+            fontSize=15,
             fontWeight="bold",
             color="white",
             stroke="white",
@@ -1351,7 +1376,7 @@ def cumulative_cost_chart(
     )
     label_text = (
         alt.Chart(labels_df)
-        .mark_text(align="center", dy=-12, fontSize=11, fontWeight="bold")
+        .mark_text(align="center", dy=-12, fontSize=15, fontWeight="bold")
         .encode(
             x=x_encoding,
             y=alt.Y("Value:Q"),
@@ -1369,13 +1394,19 @@ def cumulative_cost_chart(
     return (
         (line + label_halo + label_text)
         .properties(
-            height=380,
+            height=420,
             padding={"left": 55, "bottom": 35, "right": 35},
             title=title,
         )
-        .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
-        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
+        .configure_axis(
+            labelColor=BRAND_GRAPHITE,
+            titleColor=BRAND_GRAPHITE,
+            gridColor=BRAND_GRID,
+            labelFontSize=14,
+            titleFontSize=15,
+        )
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
+        .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
     )
 
 
@@ -1667,7 +1698,7 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
             "PeriodLabel:N",
             title=None,
             sort=period_sort_list(df),
-            axis=alt.Axis(labelAngle=0, labelPadding=10),
+            axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=14, titleFontSize=15),
         )
         x_label_encoding = alt.X("PeriodLabel:N", sort=period_sort_list(df))
         period_tooltip = alt.Tooltip("PeriodLabel:N", title="Quarter")
@@ -1700,7 +1731,7 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#B91C1C", strokeDash=[5, 5]).encode(y="y:Q")
     labels = (
         alt.Chart(latest_labels)
-        .mark_text(align="left", dx=8, dy=-8, fontSize=11, fontWeight="bold")
+        .mark_text(align="left", dx=8, dy=-8, fontSize=15, fontWeight="bold")
         .encode(
             x=x_label_encoding,
             y=alt.Y("Remaining Contingency:Q"),
@@ -1710,10 +1741,16 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
     )
     return (
         (line + zero + labels)
-        .properties(height=320, title=title, padding={"left": 55, "bottom": 25, "right": 45})
-        .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
-        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
+        .properties(height=360, title=title, padding={"left": 55, "bottom": 25, "right": 45})
+        .configure_axis(
+            labelColor=BRAND_GRAPHITE,
+            titleColor=BRAND_GRAPHITE,
+            gridColor=BRAND_GRID,
+            labelFontSize=14,
+            titleFontSize=15,
+        )
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
+        .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
     )
 
 
@@ -1735,7 +1772,7 @@ def contingency_change_chart(contingency: pd.DataFrame, title: str, chart_freque
             "PeriodLabel:N",
             title=None,
             sort=period_sort_list(df),
-            axis=alt.Axis(labelAngle=0, labelPadding=10),
+            axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=14, titleFontSize=15),
         )
         x_label_encoding = alt.X("PeriodLabel:N", sort=period_sort_list(df))
         period_tooltip = alt.Tooltip("PeriodLabel:N", title="Quarter")
@@ -1801,18 +1838,24 @@ def contingency_change_chart(contingency: pd.DataFrame, title: str, chart_freque
     )
     labels = (
         alt.Chart(totals)
-        .mark_text(fontSize=11, fontWeight="bold", color=BRAND_EBONY)
+        .mark_text(fontSize=15, fontWeight="bold", color=BRAND_EBONY)
         .encode(**label_encodings)
     )
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color=BRAND_GRID).encode(y="y:Q")
 
     return (
         (zero + bars + labels)
-        .properties(height=300, title=title, padding={"left": 55, "top": 15, "bottom": 25})
-        .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
+        .properties(height=340, title=title, padding={"left": 55, "top": 15, "bottom": 25})
+        .configure_axis(
+            labelColor=BRAND_GRAPHITE,
+            titleColor=BRAND_GRAPHITE,
+            gridColor=BRAND_GRID,
+            labelFontSize=14,
+            titleFontSize=15,
+        )
         .configure_header(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
+        .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
     )
 
 
@@ -1967,7 +2010,7 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
         alt.Chart(df)
         .mark_bar(size=28, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
         .encode(
-            x=alt.X("Reference:N", title=None, sort=sort_order, axis=alt.Axis(labelAngle=0, labelPadding=10)),
+            x=alt.X("Reference:N", title=None, sort=sort_order, axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=14, titleFontSize=15)),
             y=alt.Y("Value:Q", axis=compact_usd_axis("US$")),
             color=alt.Color(
                 "Component:N",
@@ -1991,7 +2034,7 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
     )
     labels = (
         alt.Chart(df)
-        .mark_text(fontSize=11, fontWeight="bold", color=BRAND_EBONY)
+        .mark_text(fontSize=15, fontWeight="bold", color=BRAND_EBONY)
         .encode(
             x=alt.X("Reference:N", sort=sort_order),
             y=alt.Y("Label Y:Q"),
@@ -2002,10 +2045,16 @@ def helms_contingency_timeline_chart(contingency: pd.DataFrame, title: str) -> a
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color=BRAND_GRID).encode(y="y:Q")
     return (
         (zero + bars + labels)
-        .properties(height=340, title=title, padding={"left": 55, "top": 20, "bottom": 30, "right": 45})
-        .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
-        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-        .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
+        .properties(height=360, title=title, padding={"left": 55, "top": 20, "bottom": 30, "right": 45})
+        .configure_axis(
+            labelColor=BRAND_GRAPHITE,
+            titleColor=BRAND_GRAPHITE,
+            gridColor=BRAND_GRID,
+            labelFontSize=14,
+            titleFontSize=15,
+        )
+        .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
+        .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
     )
 
 
@@ -2265,7 +2314,7 @@ st.markdown(
     }
     .metric-title {
         color: #82613F;
-        font-size: 0.78rem;
+        font-size: 0.9rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.03em;
@@ -2283,7 +2332,7 @@ st.markdown(
     }
     .metric-reference {
         color: #82613F;
-        font-size: 0.74rem;
+        font-size: 0.86rem;
         white-space: nowrap;
     }
     .metric-grid {
@@ -2298,26 +2347,26 @@ st.markdown(
     }
     .metric-label {
         color: #82613F;
-        font-size: 0.74rem;
+        font-size: 0.86rem;
         margin-bottom: 5px;
         white-space: nowrap;
     }
     .metric-value {
         color: #3D3533;
-        font-size: 1.22rem;
+        font-size: 1.42rem;
         line-height: 1.1;
         font-weight: 500;
         white-space: nowrap;
     }
     .metric-subvalue {
         color: #82613F;
-        font-size: 0.9rem;
+        font-size: 1.02rem;
         font-weight: 600;
         margin-top: 6px;
         white-space: nowrap;
     }
     .metric-value-small {
-        font-size: 0.98rem;
+        font-size: 1.12rem;
     }
     .schedule-grid {
         display: grid;
@@ -2328,7 +2377,7 @@ st.markdown(
     }
     .schedule-row-title {
         color: #82613F;
-        font-size: 0.72rem;
+        font-size: 0.84rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.02em;
@@ -2337,7 +2386,7 @@ st.markdown(
     }
     .schedule-column-title {
         color: #82613F;
-        font-size: 0.74rem;
+        font-size: 0.86rem;
         font-weight: 600;
         padding-bottom: 4px;
         text-align: center;
@@ -2350,11 +2399,11 @@ st.markdown(
         width: 100%;
         border-collapse: collapse;
         table-layout: fixed;
-        font-size: 0.92rem;
+        font-size: 1.06rem;
     }
     .statement-table th {
         color: #82613F;
-        font-size: 0.72rem;
+        font-size: 0.86rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.02em;
@@ -2383,7 +2432,7 @@ st.markdown(
     }
     .statement-table .statement-note td {
         color: #82613F;
-        font-size: 0.86rem;
+        font-size: 0.98rem;
     }
     .statement-table .negative {
         color: #9A4A3A;
@@ -2711,7 +2760,7 @@ if not p.empty or not a.empty:
                 "PeriodLabel:N",
                 title=None,
                 sort=period_sort_list(monthly_df),
-                axis=alt.Axis(labelAngle=0, labelPadding=10),
+                axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=14, titleFontSize=15),
             )
             monthly_tooltip = [
                 alt.Tooltip("PeriodLabel:N", title="Quarter"),
@@ -2748,10 +2797,16 @@ if not p.empty or not a.empty:
                 xOffset="Series:N",
                 tooltip=monthly_tooltip,
             )
-            .properties(height=320, title=hard_cost_title, padding={"left": 55, "bottom": 25, "right": 35})
-            .configure_axis(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, gridColor=BRAND_GRID)
-            .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE)
-            .configure_title(color=BRAND_EBONY, fontSize=15, anchor="middle")
+            .properties(height=360, title=hard_cost_title, padding={"left": 55, "bottom": 25, "right": 35})
+            .configure_axis(
+                labelColor=BRAND_GRAPHITE,
+                titleColor=BRAND_GRAPHITE,
+                gridColor=BRAND_GRID,
+                labelFontSize=14,
+                titleFontSize=15,
+            )
+            .configure_legend(labelColor=BRAND_GRAPHITE, titleColor=BRAND_GRAPHITE, labelFontSize=14, titleFontSize=15)
+            .configure_title(color=BRAND_EBONY, fontSize=19, anchor="middle")
         )
         export_charts.append((hard_cost_title, chart))
         st.altair_chart(chart, use_container_width=True)
