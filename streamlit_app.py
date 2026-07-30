@@ -1228,7 +1228,7 @@ def build_summary_cards_png(
         draw_centered_text(draw, (cx, card_y + 305), subvalue, metric_subvalue_font, terra)
 
     draw_left_text(draw, (right_x + pad, card_y + 38), timeline_title.upper(), card_title_font, terra)
-    schedule_left_w = 365
+    schedule_left_w = 420
     schedule_col_w = (card_w - pad * 2 - schedule_left_w) / 3
     schedule_x0 = right_x + pad + schedule_left_w
     for idx, label in enumerate([tr("projected"), tr("actual"), tr("variance")]):
@@ -1237,16 +1237,12 @@ def build_summary_cards_png(
 
     schedule_rows = [
         (tr("start").upper(), planned_start, actual_start, start_variance),
-        (tr("projected_completion").upper(), planned_completion, forecast_completion, completion_variance),
-        (tr("duration").upper(), planned_duration, forecast_duration, duration_variance),
+        ("CONCLUSÃO DA OBRA" if st.session_state.get("language", "pt") == "pt" else "CONSTRUCTION END", planned_completion, forecast_completion, completion_variance),
+        ("DURAÇÃO" if st.session_state.get("language", "pt") == "pt" else "DURATION", planned_duration, forecast_duration, duration_variance),
     ]
     row_ys = [card_y + 188, card_y + 278, card_y + 358]
     for row_y, (row_label, planned, actual, variance) in zip(row_ys, schedule_rows):
-        if row_label == tr("projected_completion").upper():
-            row_label = row_label.replace(" ", "\n", 1)
-        if row_label == tr("duration").upper():
-            row_label = row_label.replace(" DE ", "\nDE ")
-        draw.multiline_text((right_x + pad, row_y - 20), row_label, font=row_font, fill=terra, spacing=6, anchor="la")
+        draw_left_text(draw, (right_x + pad, row_y - 18), row_label, row_font, terra)
         for idx, value in enumerate([planned, actual, variance]):
             cx = schedule_x0 + schedule_col_w * idx + schedule_col_w / 2
             schedule_value_font = variance_small_value_font if idx == 2 else small_value_font
