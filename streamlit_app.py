@@ -1160,7 +1160,6 @@ def draw_left_text(
 
 
 def build_summary_cards_png(
-    app_title: str,
     progress_title: str,
     reference_text: str,
     projected_cost: str,
@@ -1180,30 +1179,30 @@ def build_summary_cards_png(
     forecast_duration: str,
     duration_variance: str,
 ) -> bytes:
-    width, height = 2800, 640
+    width, height = 2800, 510
     margin = 44
     gap = 40
-    card_y = 118
-    card_h = 445
+    card_y = 42
+    card_h = 410
     card_w = (width - margin * 2 - gap) // 2
     img = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(img)
 
-    title_font = load_report_font(76, "semibold")
     card_title_font = load_report_font(34, "semibold")
     label_font = load_report_font(32, "regular")
     label_semibold_font = load_report_font(32, "semibold")
     value_font = load_report_font(52, "regular")
+    variance_value_font = load_report_font(46, "regular")
     subvalue_font = load_report_font(34, "semibold")
+    variance_subvalue_font = load_report_font(30, "semibold")
     small_value_font = load_report_font(46, "regular")
+    variance_small_value_font = load_report_font(40, "regular")
     row_font = load_report_font(30, "semibold")
 
     ebony = BRAND_EBONY
     terra = BRAND_TERRA
     border = "#E1D4BC"
     card_bg = "#FFFDF8"
-
-    draw_left_text(draw, (margin, 24), app_title, title_font, ebony)
 
     left_x = margin
     right_x = margin + card_w + gap
@@ -1222,9 +1221,11 @@ def build_summary_cards_png(
     ]
     for idx, (label, value, subvalue) in enumerate(progress_items):
         cx = left_x + pad + col_w * idx + col_w / 2
+        metric_value_font = variance_value_font if idx == 2 else value_font
+        metric_subvalue_font = variance_subvalue_font if idx == 2 else subvalue_font
         draw_centered_text(draw, (cx, card_y + 160), label, label_font, terra)
-        draw_centered_text(draw, (cx, card_y + 230), value, value_font, ebony)
-        draw_centered_text(draw, (cx, card_y + 305), subvalue, subvalue_font, terra)
+        draw_centered_text(draw, (cx, card_y + 230), value, metric_value_font, ebony)
+        draw_centered_text(draw, (cx, card_y + 305), subvalue, metric_subvalue_font, terra)
 
     draw_left_text(draw, (right_x + pad, card_y + 38), timeline_title.upper(), card_title_font, terra)
     schedule_left_w = 365
@@ -1239,7 +1240,7 @@ def build_summary_cards_png(
         (tr("projected_completion").upper(), planned_completion, forecast_completion, completion_variance),
         (tr("duration").upper(), planned_duration, forecast_duration, duration_variance),
     ]
-    row_ys = [card_y + 200, card_y + 295, card_y + 390]
+    row_ys = [card_y + 188, card_y + 278, card_y + 358]
     for row_y, (row_label, planned, actual, variance) in zip(row_ys, schedule_rows):
         if row_label == tr("projected_completion").upper():
             row_label = row_label.replace(" ", "\n", 1)
@@ -1248,7 +1249,8 @@ def build_summary_cards_png(
         draw.multiline_text((right_x + pad, row_y - 20), row_label, font=row_font, fill=terra, spacing=6, anchor="la")
         for idx, value in enumerate([planned, actual, variance]):
             cx = schedule_x0 + schedule_col_w * idx + schedule_col_w / 2
-            draw_centered_text(draw, (cx, row_y + 5), value, small_value_font, ebony)
+            schedule_value_font = variance_small_value_font if idx == 2 else small_value_font
+            draw_centered_text(draw, (cx, row_y + 5), value, schedule_value_font, ebony)
 
     output = io.BytesIO()
     img.save(output, format="PNG", optimize=True)
@@ -2835,7 +2837,6 @@ with card2:
     st.markdown(timeline_card_html, unsafe_allow_html=True)
 
 summary_png = build_summary_cards_png(
-    tr("app_title"),
     tr("construction_cost"),
     f"{tr('reference')}: {reference_label}",
     money_mm(projected_cumulative_hard_cost),
