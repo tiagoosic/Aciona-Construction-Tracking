@@ -1934,7 +1934,16 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
 
     line = (
         alt.Chart(df)
-        .mark_line(point=True, strokeWidth=3)
+        .mark_line(
+            point=alt.OverlayMarkDef(
+                filled=True,
+                fill="white",
+                stroke=BRAND_EBONY,
+                strokeWidth=2,
+                size=85,
+            ),
+            strokeWidth=3,
+        )
         .encode(
             x=x_encoding,
             y=alt.Y("Remaining Contingency:Q", axis=mm_axis("US$")),
