@@ -2464,6 +2464,21 @@ st.markdown(
         min-height: 132px;
         box-shadow: 0 1px 8px rgba(61, 53, 51, 0.05);
     }
+    .download-link {
+        display: inline-block;
+        margin-top: 14px;
+        border: 1px solid #82613F;
+        border-radius: 6px;
+        padding: 0.5rem 0.85rem;
+        color: #3D3533 !important;
+        background: #FFFDF8;
+        font-weight: 600;
+        text-decoration: none !important;
+    }
+    .download-link:hover {
+        background: #F1E8D5;
+        color: #3D3533 !important;
+    }
     .metric-title {
         color: #82613F;
         font-size: 0.9rem;
@@ -2823,11 +2838,14 @@ summary_png = build_summary_cards_png(
     forecast_duration_months,
     duration_delta_months,
 )
-st.download_button(
-    tr("download_summary_png"),
-    data=summary_png,
-    file_name=tr("summary_png_filename"),
-    mime="image/png",
+summary_png_b64 = base64.b64encode(summary_png).decode("ascii")
+st.markdown(
+    f"""
+    <a class="download-link" href="data:image/png;base64,{summary_png_b64}" download="{escape(tr("summary_png_filename"))}">
+      {escape(tr("download_summary_png"))}
+    </a>
+    """,
+    unsafe_allow_html=True,
 )
 
 st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
