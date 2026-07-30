@@ -1931,6 +1931,7 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
     )
     projects = sorted(df["Project"].dropna().astype(str).unique())
     latest_labels = df.sort_values(["Project", "Report Date"]).groupby("Project", as_index=False).tail(1)
+    label_df = df if len(projects) == 1 else latest_labels
 
     line = (
         alt.Chart(df)
@@ -1957,9 +1958,26 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
         )
     )
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#B91C1C", strokeDash=[5, 5]).encode(y="y:Q")
-    labels = (
-        alt.Chart(latest_labels)
-        .mark_text(align="left", dx=8, dy=-8, fontSize=16, fontWeight="bold")
+    label_halo = (
+        alt.Chart(label_df)
+        .mark_text(
+            align="center",
+            dy=-14,
+            fontSize=14,
+            fontWeight="bold",
+            color="white",
+            stroke="white",
+            strokeWidth=4,
+        )
+        .encode(
+            x=x_label_encoding,
+            y=alt.Y("Remaining Contingency:Q"),
+            text="Remaining Label:N",
+        )
+    )
+    label_text = (
+        alt.Chart(label_df)
+        .mark_text(align="center", dy=-14, fontSize=14, fontWeight="bold")
         .encode(
             x=x_label_encoding,
             y=alt.Y("Remaining Contingency:Q"),
@@ -1968,7 +1986,7 @@ def contingency_line_chart(contingency: pd.DataFrame, title: str, chart_frequenc
         )
     )
     return (
-        (line + zero + labels)
+        (line + zero + label_halo + label_text)
         .properties(height=360, title=title, padding={"left": 55, "bottom": 25, "right": 45})
         .configure_axis(
             labelColor=BRAND_GRAPHITE,
