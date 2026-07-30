@@ -1112,15 +1112,23 @@ def metric_schedule_html(
 def load_report_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     candidates = [
         "C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf",
+        "Arial Bold.ttf" if bold else "Arial.ttf",
+        "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf",
+        "LiberationSans-Bold.ttf" if bold else "LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
     ]
     for candidate in candidates:
         try:
             return ImageFont.truetype(candidate, size=size)
         except OSError:
             continue
-    return ImageFont.load_default()
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
 
 
 def draw_centered_text(
@@ -1164,21 +1172,21 @@ def build_summary_cards_png(
     forecast_duration: str,
     duration_variance: str,
 ) -> bytes:
-    width, height = 2800, 760
+    width, height = 2800, 590
     margin = 44
     gap = 40
-    card_y = 150
-    card_h = 520
+    card_y = 118
+    card_h = 395
     card_w = (width - margin * 2 - gap) // 2
     img = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(img)
 
-    title_font = load_report_font(92, bold=True)
+    title_font = load_report_font(76, bold=True)
     card_title_font = load_report_font(34, bold=True)
     label_font = load_report_font(32)
-    value_font = load_report_font(48)
-    subvalue_font = load_report_font(32, bold=True)
-    small_value_font = load_report_font(42)
+    value_font = load_report_font(52)
+    subvalue_font = load_report_font(34, bold=True)
+    small_value_font = load_report_font(46)
     row_font = load_report_font(30, bold=True)
 
     ebony = BRAND_EBONY
@@ -1186,7 +1194,7 @@ def build_summary_cards_png(
     border = "#E1D4BC"
     card_bg = "#FFFDF8"
 
-    draw_left_text(draw, (margin, 28), app_title, title_font, ebony)
+    draw_left_text(draw, (margin, 24), app_title, title_font, ebony)
 
     left_x = margin
     right_x = margin + card_w + gap
@@ -1194,8 +1202,8 @@ def build_summary_cards_png(
         draw.rounded_rectangle((x, card_y, x + card_w, card_y + card_h), radius=16, fill=card_bg, outline=border, width=2)
 
     pad = 48
-    draw_left_text(draw, (left_x + pad, card_y + 48), progress_title.upper(), card_title_font, terra)
-    draw.text((left_x + card_w - pad, card_y + 48), reference_text, font=label_font, fill=terra, anchor="ra")
+    draw_left_text(draw, (left_x + pad, card_y + 38), progress_title.upper(), card_title_font, terra)
+    draw.text((left_x + card_w - pad, card_y + 38), reference_text, font=label_font, fill=terra, anchor="ra")
 
     col_w = (card_w - pad * 2) / 3
     progress_items = [
@@ -1205,24 +1213,24 @@ def build_summary_cards_png(
     ]
     for idx, (label, value, subvalue) in enumerate(progress_items):
         cx = left_x + pad + col_w * idx + col_w / 2
-        draw_centered_text(draw, (cx, card_y + 230), label, label_font, terra)
-        draw_centered_text(draw, (cx, card_y + 310), value, value_font, ebony)
-        draw_centered_text(draw, (cx, card_y + 400), subvalue, subvalue_font, terra)
+        draw_centered_text(draw, (cx, card_y + 160), label, label_font, terra)
+        draw_centered_text(draw, (cx, card_y + 230), value, value_font, ebony)
+        draw_centered_text(draw, (cx, card_y + 305), subvalue, subvalue_font, terra)
 
-    draw_left_text(draw, (right_x + pad, card_y + 48), timeline_title.upper(), card_title_font, terra)
+    draw_left_text(draw, (right_x + pad, card_y + 38), timeline_title.upper(), card_title_font, terra)
     schedule_left_w = 300
     schedule_col_w = (card_w - pad * 2 - schedule_left_w) / 3
     schedule_x0 = right_x + pad + schedule_left_w
     for idx, label in enumerate([tr("projected"), tr("actual"), tr("variance")]):
         cx = schedule_x0 + schedule_col_w * idx + schedule_col_w / 2
-        draw_centered_text(draw, (cx, card_y + 160), label, label_font, terra)
+        draw_centered_text(draw, (cx, card_y + 125), label, label_font, terra)
 
     schedule_rows = [
         (tr("start").upper(), planned_start, actual_start, start_variance),
         (tr("projected_completion").upper(), planned_completion, forecast_completion, completion_variance),
         (tr("duration").upper(), planned_duration, forecast_duration, duration_variance),
     ]
-    row_ys = [card_y + 245, card_y + 345, card_y + 455]
+    row_ys = [card_y + 195, card_y + 275, card_y + 355]
     for row_y, (row_label, planned, actual, variance) in zip(row_ys, schedule_rows):
         if row_label == tr("projected_completion").upper():
             row_label = row_label.replace(" ", "\n", 1)
