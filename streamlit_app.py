@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import base64
+import io
 import json
 from html import escape
 
@@ -8,6 +9,7 @@ import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
+from PIL import Image, ImageDraw, ImageFont
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -156,6 +158,8 @@ TRANSLATIONS = {
         "export_help": "Download an A4 landscape HTML report with the current charts. Open it in a browser and print/save as PDF, or use it as the source for presentation screenshots.",
         "download_a4_html": "Download A4 report (HTML)",
         "export_filename": "construction_tracking_a4.html",
+        "download_summary_png": "Download summary cards (PNG)",
+        "summary_png_filename": "construction_tracking_summary_cards.png",
     },
     "pt": {
         "app_title": "Acompanhamento de Obra",
@@ -251,6 +255,8 @@ TRANSLATIONS = {
         "export_help": "Baixe um relatório HTML em A4 paisagem com os gráficos atuais. Abra no navegador e imprima/salve em PDF, ou use como fonte para capturas em apresentação.",
         "download_a4_html": "Baixar relatório A4 (HTML)",
         "export_filename": "acompanhamento_obra_a4.html",
+        "download_summary_png": "Baixar cards resumo (PNG)",
+        "summary_png_filename": "acompanhamento_obra_cards_resumo.png",
     },
 }
 
@@ -1101,6 +1107,135 @@ def metric_schedule_html(
       </div>
     </div>
     """
+
+
+def load_report_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
+    candidates = [
+        "C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+    ]
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size=size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def draw_centered_text(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[float, float],
+    text: str,
+    font: ImageFont.ImageFont,
+    fill: str,
+) -> None:
+    draw.text(xy, text, font=font, fill=fill, anchor="mm")
+
+
+def draw_left_text(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[float, float],
+    text: str,
+    font: ImageFont.ImageFont,
+    fill: str,
+) -> None:
+    draw.text(xy, text, font=font, fill=fill, anchor="la")
+
+
+def build_summary_cards_png(
+    app_title: str,
+    progress_title: str,
+    reference_text: str,
+    projected_cost: str,
+    projected_completion: str,
+    actual_cost: str,
+    actual_completion: str,
+    variance_cost: str,
+    variance_completion: str,
+    timeline_title: str,
+    planned_start: str,
+    actual_start: str,
+    start_variance: str,
+    planned_completion: str,
+    forecast_completion: str,
+    completion_variance: str,
+    planned_duration: str,
+    forecast_duration: str,
+    duration_variance: str,
+) -> bytes:
+    width, height = 2800, 760
+    margin = 44
+    gap = 40
+    card_y = 150
+    card_h = 520
+    card_w = (width - margin * 2 - gap) // 2
+    img = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(img)
+
+    title_font = load_report_font(92, bold=True)
+    card_title_font = load_report_font(34, bold=True)
+    label_font = load_report_font(32)
+    value_font = load_report_font(48)
+    subvalue_font = load_report_font(32, bold=True)
+    small_value_font = load_report_font(42)
+    row_font = load_report_font(30, bold=True)
+
+    ebony = BRAND_EBONY
+    terra = BRAND_TERRA
+    border = "#E1D4BC"
+    card_bg = "#FFFDF8"
+
+    draw_left_text(draw, (margin, 28), app_title, title_font, ebony)
+
+    left_x = margin
+    right_x = margin + card_w + gap
+    for x in [left_x, right_x]:
+        draw.rounded_rectangle((x, card_y, x + card_w, card_y + card_h), radius=16, fill=card_bg, outline=border, width=2)
+
+    pad = 48
+    draw_left_text(draw, (left_x + pad, card_y + 48), progress_title.upper(), card_title_font, terra)
+    draw.text((left_x + card_w - pad, card_y + 48), reference_text, font=label_font, fill=terra, anchor="ra")
+
+    col_w = (card_w - pad * 2) / 3
+    progress_items = [
+        (tr("projected"), projected_cost, projected_completion),
+        (tr("actual"), actual_cost, actual_completion),
+        (tr("variance"), variance_cost, variance_completion),
+    ]
+    for idx, (label, value, subvalue) in enumerate(progress_items):
+        cx = left_x + pad + col_w * idx + col_w / 2
+        draw_centered_text(draw, (cx, card_y + 230), label, label_font, terra)
+        draw_centered_text(draw, (cx, card_y + 310), value, value_font, ebony)
+        draw_centered_text(draw, (cx, card_y + 400), subvalue, subvalue_font, terra)
+
+    draw_left_text(draw, (right_x + pad, card_y + 48), timeline_title.upper(), card_title_font, terra)
+    schedule_left_w = 300
+    schedule_col_w = (card_w - pad * 2 - schedule_left_w) / 3
+    schedule_x0 = right_x + pad + schedule_left_w
+    for idx, label in enumerate([tr("projected"), tr("actual"), tr("variance")]):
+        cx = schedule_x0 + schedule_col_w * idx + schedule_col_w / 2
+        draw_centered_text(draw, (cx, card_y + 160), label, label_font, terra)
+
+    schedule_rows = [
+        (tr("start").upper(), planned_start, actual_start, start_variance),
+        (tr("projected_completion").upper(), planned_completion, forecast_completion, completion_variance),
+        (tr("duration").upper(), planned_duration, forecast_duration, duration_variance),
+    ]
+    row_ys = [card_y + 245, card_y + 345, card_y + 455]
+    for row_y, (row_label, planned, actual, variance) in zip(row_ys, schedule_rows):
+        if row_label == tr("projected_completion").upper():
+            row_label = row_label.replace(" ", "\n", 1)
+        if row_label == tr("duration").upper():
+            row_label = row_label.replace(" ", "\n", 1)
+        draw.multiline_text((right_x + pad, row_y - 20), row_label, font=row_font, fill=terra, spacing=6, anchor="la")
+        for idx, value in enumerate([planned, actual, variance]):
+            cx = schedule_x0 + schedule_col_w * idx + schedule_col_w / 2
+            draw_centered_text(draw, (cx, row_y + 5), value, small_value_font, ebony)
+
+    output = io.BytesIO()
+    img.save(output, format="PNG", optimize=True)
+    return output.getvalue()
 
 
 def mm_axis(title: str = "US$") -> alt.Axis:
@@ -2666,6 +2801,34 @@ with card1:
     st.markdown(progress_card_html, unsafe_allow_html=True)
 with card2:
     st.markdown(timeline_card_html, unsafe_allow_html=True)
+
+summary_png = build_summary_cards_png(
+    tr("app_title"),
+    tr("construction_cost"),
+    f"{tr('reference')}: {reference_label}",
+    money_mm(projected_cumulative_hard_cost),
+    pct(projected_completion),
+    money_mm(actual_cumulative_hard_cost),
+    pct(actual_completion),
+    signed_money_mm(cost_delta),
+    signed_pct(completion_delta),
+    tr("timeline"),
+    date_label(projected_start),
+    date_label(actual_start),
+    start_delta,
+    date_label(projected_completion_date),
+    date_label(forecast_completion_date),
+    completion_delta_months,
+    planned_duration_months,
+    forecast_duration_months,
+    duration_delta_months,
+)
+st.download_button(
+    tr("download_summary_png"),
+    data=summary_png,
+    file_name=tr("summary_png_filename"),
+    mime="image/png",
+)
 
 st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
 
