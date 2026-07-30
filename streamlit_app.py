@@ -1109,8 +1109,16 @@ def metric_schedule_html(
     """
 
 
-def load_report_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
+def load_report_font(size: int, weight: str = "regular") -> ImageFont.ImageFont:
+    if weight == "bold":
+        font_file = "Poppins-Bold.ttf"
+    elif weight == "semibold":
+        font_file = "Poppins-SemiBold.ttf"
+    else:
+        font_file = "Poppins-Regular.ttf"
+    bold = weight == "bold"
     candidates = [
+        str(BASE_DIR / "assets" / "fonts" / font_file),
         "C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf",
         "Arial Bold.ttf" if bold else "Arial.ttf",
         "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf",
@@ -1172,22 +1180,23 @@ def build_summary_cards_png(
     forecast_duration: str,
     duration_variance: str,
 ) -> bytes:
-    width, height = 2800, 590
+    width, height = 2800, 640
     margin = 44
     gap = 40
     card_y = 118
-    card_h = 395
+    card_h = 445
     card_w = (width - margin * 2 - gap) // 2
     img = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(img)
 
-    title_font = load_report_font(76, bold=True)
-    card_title_font = load_report_font(34, bold=True)
-    label_font = load_report_font(32)
-    value_font = load_report_font(52)
-    subvalue_font = load_report_font(34, bold=True)
-    small_value_font = load_report_font(46)
-    row_font = load_report_font(30, bold=True)
+    title_font = load_report_font(76, "semibold")
+    card_title_font = load_report_font(34, "semibold")
+    label_font = load_report_font(32, "regular")
+    label_semibold_font = load_report_font(32, "semibold")
+    value_font = load_report_font(52, "regular")
+    subvalue_font = load_report_font(34, "semibold")
+    small_value_font = load_report_font(46, "regular")
+    row_font = load_report_font(30, "semibold")
 
     ebony = BRAND_EBONY
     terra = BRAND_TERRA
@@ -1218,24 +1227,24 @@ def build_summary_cards_png(
         draw_centered_text(draw, (cx, card_y + 305), subvalue, subvalue_font, terra)
 
     draw_left_text(draw, (right_x + pad, card_y + 38), timeline_title.upper(), card_title_font, terra)
-    schedule_left_w = 300
+    schedule_left_w = 365
     schedule_col_w = (card_w - pad * 2 - schedule_left_w) / 3
     schedule_x0 = right_x + pad + schedule_left_w
     for idx, label in enumerate([tr("projected"), tr("actual"), tr("variance")]):
         cx = schedule_x0 + schedule_col_w * idx + schedule_col_w / 2
-        draw_centered_text(draw, (cx, card_y + 125), label, label_font, terra)
+        draw_centered_text(draw, (cx, card_y + 125), label, label_semibold_font, terra)
 
     schedule_rows = [
         (tr("start").upper(), planned_start, actual_start, start_variance),
         (tr("projected_completion").upper(), planned_completion, forecast_completion, completion_variance),
         (tr("duration").upper(), planned_duration, forecast_duration, duration_variance),
     ]
-    row_ys = [card_y + 195, card_y + 275, card_y + 355]
+    row_ys = [card_y + 200, card_y + 295, card_y + 390]
     for row_y, (row_label, planned, actual, variance) in zip(row_ys, schedule_rows):
         if row_label == tr("projected_completion").upper():
             row_label = row_label.replace(" ", "\n", 1)
         if row_label == tr("duration").upper():
-            row_label = row_label.replace(" ", "\n", 1)
+            row_label = row_label.replace(" DE ", "\nDE ")
         draw.multiline_text((right_x + pad, row_y - 20), row_label, font=row_font, fill=terra, spacing=6, anchor="la")
         for idx, value in enumerate([planned, actual, variance]):
             cx = schedule_x0 + schedule_col_w * idx + schedule_col_w / 2
