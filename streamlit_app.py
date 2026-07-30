@@ -160,6 +160,8 @@ TRANSLATIONS = {
         "export_filename": "construction_tracking_a4.html",
         "download_summary_png": "Download summary cards (PNG)",
         "summary_png_filename": "construction_tracking_summary_cards.png",
+        "download_contingency_png": "Download contingency cards (PNG)",
+        "contingency_png_filename": "construction_tracking_contingency_cards.png",
     },
     "pt": {
         "app_title": "Acompanhamento de Obra",
@@ -257,6 +259,8 @@ TRANSLATIONS = {
         "export_filename": "acompanhamento_obra_a4.html",
         "download_summary_png": "Baixar cards resumo (PNG)",
         "summary_png_filename": "acompanhamento_obra_cards_resumo.png",
+        "download_contingency_png": "Baixar cards contingência (PNG)",
+        "contingency_png_filename": "acompanhamento_obra_cards_contingencia.png",
     },
 }
 
@@ -1247,6 +1251,54 @@ def build_summary_cards_png(
             cx = schedule_x0 + schedule_col_w * idx + schedule_col_w / 2
             schedule_value_font = variance_small_value_font if idx == 2 else small_value_font
             draw_centered_text(draw, (cx, row_y + 5), value, schedule_value_font, ebony)
+
+    output = io.BytesIO()
+    img.save(output, format="PNG", optimize=True)
+    return output.getvalue()
+
+
+def build_contingency_cards_png(
+    reserve_title: str,
+    reserve_items: list[tuple[str, str]],
+    composition_title: str,
+    composition_items: list[tuple[str, str]],
+) -> bytes:
+    width, height = 2400, 430
+    margin = 44
+    gap = 40
+    card_y = 38
+    card_h = 325
+    card_w = (width - margin * 2 - gap) // 2
+    img = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(img)
+
+    card_title_font = load_report_font(34, "semibold")
+    label_font = load_report_font(30, "regular")
+    value_font = load_report_font(44, "regular")
+
+    ebony = BRAND_EBONY
+    terra = BRAND_TERRA
+    border = "#E1D4BC"
+    card_bg = "#FFFDF8"
+
+    def draw_card(x: int, title: str, items: list[tuple[str, str]]) -> None:
+        draw.rounded_rectangle(
+            (x, card_y, x + card_w, card_y + card_h),
+            radius=16,
+            fill=card_bg,
+            outline=border,
+            width=2,
+        )
+        pad = 48
+        draw_left_text(draw, (x + pad, card_y + 40), title.upper(), card_title_font, terra)
+        col_w = (card_w - pad * 2) / max(len(items), 1)
+        for idx, (label, value) in enumerate(items):
+            cx = x + pad + col_w * idx + col_w / 2
+            draw_centered_text(draw, (cx, card_y + 160), label, label_font, terra)
+            draw_centered_text(draw, (cx, card_y + 230), value, value_font, ebony)
+
+    draw_card(margin, reserve_title, reserve_items)
+    draw_card(margin + card_w + gap, composition_title, composition_items)
 
     output = io.BytesIO()
     img.save(output, format="PNG", optimize=True)
@@ -3034,7 +3086,7 @@ if c.empty:
 else:
     contingency_summary = contingency_metrics(c, selected_project)
     is_helms_view = selected_project != "All projects" and "helms" in str(selected_project).lower()
-    column_widths = [0.12, 0.76, 0.12] if is_helms_view else [0.22, 0.56, 0.22]
+    column_widths = [0.12, 0.76, 0.12] if is_helms_view else [0.08, 0.84, 0.08]
     _, cont_col, _ = st.columns(column_widths)
     with cont_col:
         if is_helms_view:
@@ -3044,43 +3096,56 @@ else:
                 unsafe_allow_html=True,
             )
         else:
-            st.markdown(
-                metric_trio_html(
-                    tr("contingency_reserve"),
-                    tr("original"),
-                    money(contingency_summary["original"]),
-                    tr("remaining"),
-                    money(contingency_summary["remaining"]),
-                    tr("remaining_pct"),
-                    pct(contingency_summary["remaining_pct"]),
-                ),
-                unsafe_allow_html=True,
+            reserve_items = [
+                (tr("original"), money(contingency_summary["original"])),
+                (tr("remaining"), money(contingency_summary["remaining"])),
+                (tr("remaining_pct"), pct(contingency_summary["remaining_pct"])),
+            ]
+            composition_items = [
+                (tr("committed_projected"), money(contingency_summary["committed_projected"])),
+                (tr("drawn"), money(contingency_summary["drawn"])),
+                (tr("reallocated"), signed_money(contingency_summary["reallocated"])),
+            ]
+            reserve_col, composition_col = st.columns(2)
+            with reserve_col:
+                st.markdown(
+                    metric_trio_html(
+                        tr("contingency_reserve"),
+                        reserve_items[0][0],
+                        reserve_items[0][1],
+                        reserve_items[1][0],
+                        reserve_items[1][1],
+                        reserve_items[2][0],
+                        reserve_items[2][1],
+                    ),
+                    unsafe_allow_html=True,
+                )
+            with composition_col:
+                st.markdown(
+                    metric_trio_html(
+                        tr("contingency_composition"),
+                        composition_items[0][0],
+                        composition_items[0][1],
+                        composition_items[1][0],
+                        composition_items[1][1],
+                        composition_items[2][0],
+                        composition_items[2][1],
+                    ),
+                    unsafe_allow_html=True,
+                )
+            contingency_png = build_contingency_cards_png(
+                tr("contingency_reserve"),
+                reserve_items,
+                tr("contingency_composition"),
+                composition_items,
             )
-            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+            contingency_png_b64 = base64.b64encode(contingency_png).decode("ascii")
             st.markdown(
-                metric_trio_html(
-                    tr("contingency_composition"),
-                    tr("committed_projected"),
-                    money(contingency_summary["committed_projected"]),
-                    tr("drawn"),
-                    money(contingency_summary["drawn"]),
-                    tr("reallocated"),
-                    signed_money(contingency_summary["reallocated"]),
-                ),
-                unsafe_allow_html=True,
-            )
-        if not is_helms_view:
-            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-            st.markdown(
-                metric_trio_html(
-                    tr("contingency_offsets"),
-                    tr("buyout_savings"),
-                    money(contingency_summary["buyout_savings"]),
-                    tr("contract_contingency"),
-                    money(contingency_summary["contract_contingency"]),
-                    tr("net_savings"),
-                    money(contingency_summary["net_savings"]),
-                ),
+                f"""
+                <a class="download-link" href="data:image/png;base64,{contingency_png_b64}" download="{escape(tr("contingency_png_filename"))}">
+                  {escape(tr("download_contingency_png"))}
+                </a>
+                """,
                 unsafe_allow_html=True,
             )
 
