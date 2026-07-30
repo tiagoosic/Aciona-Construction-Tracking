@@ -162,6 +162,8 @@ TRANSLATIONS = {
         "summary_png_filename": "construction_tracking_summary_cards.png",
         "download_contingency_png": "Download contingency cards (PNG)",
         "contingency_png_filename": "construction_tracking_contingency_cards.png",
+        "increase": "Increase",
+        "decrease": "Decrease",
     },
     "pt": {
         "app_title": "Acompanhamento de Obra",
@@ -261,6 +263,8 @@ TRANSLATIONS = {
         "summary_png_filename": "acompanhamento_obra_cards_resumo.png",
         "download_contingency_png": "Baixar cards contingência (PNG)",
         "contingency_png_filename": "acompanhamento_obra_cards_contingencia.png",
+        "increase": "Aumento",
+        "decrease": "Diminuição",
     },
 }
 
@@ -2029,8 +2033,10 @@ def contingency_change_chart(contingency: pd.DataFrame, title: str, chart_freque
         period_tooltip = alt.Tooltip("Report Date:T", title="Month", format="%b/%y")
         total_group_cols = ["Report Date"]
 
+    increase_label = tr("increase")
+    decrease_label = tr("decrease")
     df["Direction"] = df["Monthly Contingency Change"].map(
-        lambda value: "Increase" if pd.notna(value) and value >= 0 else "Decrease"
+        lambda value: increase_label if pd.notna(value) and value >= 0 else decrease_label
     )
     totals = (
         df.groupby(total_group_cols, as_index=False)["Monthly Contingency Change"]
@@ -2049,7 +2055,7 @@ def contingency_change_chart(contingency: pd.DataFrame, title: str, chart_freque
         alt.Color(
             "Direction:N",
             title="",
-            scale=alt.Scale(domain=["Increase", "Decrease"], range=[BRAND_EBONY, BRAND_GOLD]),
+            scale=alt.Scale(domain=[increase_label, decrease_label], range=[BRAND_EBONY, BRAND_GOLD]),
         )
         if single_project
         else alt.Color("Project:N", title="", scale=contingency_color_scale(projects))
